@@ -1,0 +1,7 @@
+# requirements.txt
+
+pandas
+numpy
+tqdm
+pyarrow
+scipy
