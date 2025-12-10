@@ -15,8 +15,7 @@ class AdvancedDataAnalyzer:
     синтетических признаков, таких как "Индекс Здоровья".
     """
 
-
-    def __init__(self, plots_dir: pathlib.Path, extended_filepath: pathlib.Path, logger: logging.Logger):    
+    def __init__(self, plots_dir: pathlib.Path, extended_filepath: pathlib.Path, logger: logging.Logger, config):
         """
         Инициализирует анализатор.
 
@@ -24,10 +23,12 @@ class AdvancedDataAnalyzer:
             plots_dir (pathlib.Path): Папка для сохранения графиков.
             extended_filepath (pathlib.Path): Путь к кэш-файлу с расширенными признаками.
             logger (logging.Logger): Экземпляр логгера.
+            config: Модуль конфигурации для доступа к картам каналов.
         """
         self.plots_dir = plots_dir
         self.extended_filepath = extended_filepath
         self.logger = logger
+        self.config = config
         sns.set(style="whitegrid")
 
     def run(self, base_feature_df: pd.DataFrame) -> pd.DataFrame:
@@ -75,13 +76,13 @@ class AdvancedDataAnalyzer:
         self.logger.info("Расчет 'Индекса Здоровья' с помощью PCA...")
         extended_df = df.copy()
         
-        # Определяем количество подшипников по колонкам
-        # bearing_1_mean -> 1
-        num_bearings = max([int(col.split('_')[1]) for col in df.columns if col.startswith('bearing')])
+        # Получаем карту каналов для текущего эксперимента
+        experiment_name = self.extended_filepath.stem.split('_')[0] + '_test'
+        channel_map = self.config.EXPERIMENT_CHANNELS[experiment_name]
 
-        for i in range(1, num_bearings + 1):
+        for bearing_name in channel_map.keys():        
             # 1. Выбираем все признаки для текущего подшипника
-            feature_cols = [col for col in df.columns if f'bearing_{i}' in col]
+            feature_cols = [col for col in df.columns if bearing_name in col]
             bearing_features = df[feature_cols]
 
             # 2. Стандартизируем признаки (важно для PCA)
@@ -104,8 +105,8 @@ class AdvancedDataAnalyzer:
                 health_index = -health_index # Инвертируем
 
             # 5. Добавляем новую колонку в датафрейм
-            extended_df[f'bearing_{i}_health_index'] = health_index
-            self.logger.info(f"Индекс здоровья для подшипника {i} успешно рассчитан.")
+            extended_df[f'{bearing_name}_health_index'] = health_index
+            self.logger.info(f"Индекс здоровья для {bearing_name} успешно рассчитан.")
             
         return extended_df
 

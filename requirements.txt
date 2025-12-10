@@ -8,3 +8,5 @@ scipy
 matplotlib
 seaborn
 scikit-learn
+umap-learn
+pillow

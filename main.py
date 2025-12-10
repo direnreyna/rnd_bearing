@@ -8,6 +8,8 @@ from src.dataset_builder import DatasetBuilder
 from src.app_logger import AppLogger
 from src.data_analyzer import DataAnalyzer
 from src.advanced_analyzer import AdvancedDataAnalyzer
+from src.spectral_analyzer import SpectralAnalyzer
+from src.umap_visualizer import UMAPVisualizer
 
 # Настраиваем pandas для более удобного вывода в консоль
 pd.set_option('display.max_columns', 50)
@@ -30,53 +32,48 @@ def main():
     analyzer.run()
 
     # Шаг 3: Продвинутый анализ
-    adv_analyzer = AdvancedDataAnalyzer(plots_dir=config.EDA_PLOTS_DIR, extended_filepath=config.EXTENDED_DATA_FILEPATH, logger=logger)
+    adv_analyzer = AdvancedDataAnalyzer(plots_dir=config.EDA_PLOTS_DIR, extended_filepath=config.EXTENDED_DATA_FILEPATH, logger=logger, config=config)
     extended_df = adv_analyzer.run(feature_df)
 
-    logger.info("Пайплайн успешно завершен.")
-    logger.info(f"Финальный датасет (расширенный) имеет форму: {extended_df.shape}")
+    # Шаг 4: Извлечение спектральных признаков
+    spectral_analyzer = SpectralAnalyzer(
+        raw_data_path=config.RAW_EXPERIMENT_DIR,
+        spectral_filepath=config.SPECTRAL_FEATURES_FILEPATH,
+        logger=logger,
+        config=config,
+        window_size=config.WINDOW_SIZE,
+        step=config.STEP,
+        n_peaks=config.N_PEAKS,
+        sampling_rate=config.SAMPLING_RATE)
+    spectral_df = spectral_analyzer.run()
+
+    # Шаг 5: Предобработка спектральных данных и UMAP визуализация
+    umap_visualizer = UMAPVisualizer(
+        output_path=config.UMAP_ANIMATION_FILEPATH,
+        logger=logger,
+        sample_fraction=config.UMAP_SAMPLE_FRACTION,
+        #model_path=config.UMAP_MODEL_FILEPATH,
+        animation_frequency=config.ANIMATION_FREQUENCY,
+        animation_interval=config.ANIMATION_INTERVAL
+    )
+    processed_spectral_df = umap_visualizer.run(spectral_df)
     
-    ### builder = DatasetBuilder(raw_data_path=config.RAW_EXPERIMENT_DIR, processed_filepath=config.PROCESSED_DATA_FILEPATH, logger=logger)
-    ### 
-    ### # Загружаем датасет
-    ### feature_df = builder.build_dataset()
-    ### logger.info(f"Форма датасета: {feature_df.shape}")
-    ### 
-    ### # Для многострочного вывода используем to_string() или буфер
-    ### # logger.info(f"\nПервые 5 строк:\n{feature_df.head().to_string()}")
-    ### 
-    ### with io.StringIO() as buffer:
-    ###     feature_df.info(buf=buffer)
-    ###     info_str = buffer.getvalue()
-    ###     logger.info(f"\nТипы данных и информация:\n{info_str}")
-    ### 
-    ### # Расчет или загрузка "Индекса Здоровья"
-    ### logger.info("Продвинутый анализ данных (Health Index)")
-    ### adv_analyzer = AdvancedDataAnalyzer(plots_dir=config.EDA_PLOTS_DIR, logger=logger)
-    ### 
-    ### if config.EXTENDED_DATA_FILEPATH.exists():
-    ###     logger.info(f"Загружаем расширенный датасет из кэша: {config.EXTENDED_DATA_FILEPATH}")
-    ###     extended_df = pd.read_parquet(config.EXTENDED_DATA_FILEPATH)
-    ### else:
-    ###     logger.info("Расширенный датасет не найден. Создаем новый...")
-    ###     extended_df = adv_analyzer.calculate_health_index(feature_df)
-    ###     logger.info(f"Сохраняем расширенный датасет в файл: {config.EXTENDED_DATA_FILEPATH}")
-    ###     extended_df.to_parquet(config.EXTENDED_DATA_FILEPATH)
-    ### 
-    ### # 5. Запускаем исследовательский анализ данных (EDA)
-    ### logger.info("Исследовательский анализ данных (EDA)")
-    ### analyzer = DataAnalyzer(
-    ###     feature_df=feature_df,
-    ###     plots_dir=config.EDA_PLOTS_DIR,
-    ###     logger=logger
-    ### )
-    ### analyzer.plot_key_features()
-    ### logger.info(f"Графики EDA сохранены в папку: {config.EDA_PLOTS_DIR}")
-    ### 
-    ### # Визуализация "Индекса Здоровья"
-    ### logger.info("Визуализация продвинутого анализа (Health Index)")
-    ### adv_analyzer.plot_health_index(extended_df)
-    ### logger.info(f"График Health Index сохранен в папку: {config.EDA_PLOTS_DIR}")
+    # Шаг 6: Вывод отладочной информации (если включено в конфиге)
+    if config.DEBUG:
+        logger.info("--- РЕЖИМ ОТЛАДКИ АКТИВИРОВАН ---")
+        logger.info(f"Форма спектрального датасета: {spectral_df.shape}")
+        logger.info(f"Первые 5 строк спектрального датасета:\n{spectral_df.head().to_string()}")
+        
+        with io.StringIO() as buffer:
+            spectral_df.info(buf=buffer)
+            info_str = buffer.getvalue()
+            logger.info(f"\nИнформация о спектральном датасете:\n{info_str}")
+        
+        logger.info(f"Статистическая сводка по спектральному датасету:\n{spectral_df.describe().to_string()}")
+        logger.info("--- КОНЕЦ СЕКЦИИ ОТЛАДКИ ---")
+    
+    logger.info("Пайплайн успешно завершен.")
+    logger.info(f"Финальный датасет (расширенный) имеет форму: {processed_spectral_df.shape}")
 
 if __name__ == "__main__":
     main()
