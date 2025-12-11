@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks
 from tqdm import tqdm
+from .derivative_builder import DerivativeBuilder
 
 class SpectralAnalyzer:
     """
@@ -38,35 +39,16 @@ class SpectralAnalyzer:
             self.logger.info("Кэш спектральных признаков не найден. Запускаем полный анализ...")
             spectral_df = self._create_spectral_dataset()
 
+            # Сразу после создания обогащаем датасет производными
+            derivative_builder = DerivativeBuilder(logger=self.logger)
+            spectral_df = derivative_builder.run(spectral_df)
+            
+            # Сохраняем уже обогащенный датасет
+            self.logger.info(f"Сохраняем обогащенный датасет спектральных признаков: {self.spectral_filepath}")
+            spectral_df.to_parquet(self.spectral_filepath)
+
         self.logger.info(f"Датасет спектральных признаков готов. Форма: {spectral_df.shape}")
         return spectral_df
-            
-###     def _create_spectral_dataset(self) -> pd.DataFrame:
-###         """
-###         Итерируется по всем сырым файлам и собирает датасет спектральных признаков.
-###         """
-###         file_list = sorted([f for f in self.raw_data_path.iterdir() if f.is_file()])
-###         all_features = []
-### 
-###         for file_path in tqdm(file_list, desc="Анализ спектров"):
-###             timestamp_str = file_path.name
-###             raw_df = pd.read_csv(file_path, sep='\t', header=None)
-###             
-###             # Обрабатываем каждый подшипник (каждую колонку)
-###             for col_idx, col_name in enumerate(raw_df.columns):
-###                 series = raw_df[col_name]
-###                 bearing_name = f'bearing_{col_idx + 1}'
-###                 windows = self._create_windows(series.to_numpy())
-###                 
-###                 for window_idx, window in enumerate(windows):
-###                     features = self._extract_fft_features(window)
-###                     features['timestamp'] = timestamp_str
-###                     features['window_id'] = f'{timestamp_str}_{bearing_name}_{window_idx}'
-###                     features['bearing'] = bearing_name
-###                     all_features.append(features)
-###         
-###         spectral_df = pd.DataFrame(all_features)
-###         self.logger.info(f"Сохраняем датасет спектральных признаков: {self.spectral_filepath}")
 
     def _create_spectral_dataset(self) -> pd.DataFrame:
         """
@@ -112,8 +94,6 @@ class SpectralAnalyzer:
                     all_features.append(window_features)
         
         spectral_df = pd.DataFrame(all_features)
-        self.logger.info(f"Сохраняем датасет спектральных признаков: {self.spectral_filepath}")
-        spectral_df.to_parquet(self.spectral_filepath)
         return spectral_df
 
     def _create_windows(self, data: np.ndarray) -> list[np.ndarray]:
