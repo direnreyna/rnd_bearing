@@ -267,8 +267,8 @@ class UMAPVisualizer:
         save_path = self.output_path.with_name(f"{self.output_path.stem}_migration.gif")
         self.logger.info(f"Создание миграционной GIF-анимации... Результат будет в {save_path}")
 
-        df['day'] = df['timestamp'].dt.date
-        unique_days = sorted([d for d in df['day'].unique() if pd.notna(d)])
+        ### df['day'] = df['timestamp'].dt.date
+        ### unique_days = sorted([d for d in df['day'].unique() if pd.notna(d)])
         frame_timestamps = self._generate_frame_timestamps(df)
 
         fig, ax = plt.subplots(figsize=(12, 10))
@@ -282,31 +282,31 @@ class UMAPVisualizer:
             ax.clear()
             
             # Определяем текущий день и границы окна
-            current_day = unique_days[frame_idx]
-            start_day = current_day - pd.to_timedelta(window_days, unit='d')
+
+            current_ts = frame_timestamps[frame_idx]
+            start_ts = current_ts - pd.to_timedelta(window_days, unit='d')
             
-            data_in_window = df[(df['day'] > start_day) & (df['day'] <= current_day)]
-            
+            data_in_window = df[(df['timestamp'] > start_ts) & (df['timestamp'] <= current_ts)]
+                        
             # Создаем градиент "свежести"
-            norm = Normalize(start_day.toordinal(), current_day.toordinal())
+            norm = Normalize(start_ts.timestamp(), current_ts.timestamp())
             cmap = plt.get_cmap('hot') # "Горячая" палитра: от темного к ярко-желтому
 
             points = ax.scatter(
                 data_in_window['umap_x'], data_in_window['umap_y'],
-                c=[cmap(norm(d.toordinal())) for d in data_in_window['day']],
+                c=[cmap(norm(ts.timestamp())) for ts in data_in_window['timestamp']],
                 alpha=0.7, s=15
             )
 
             ax.set_xlim(x_min, x_max)
             ax.set_ylim(y_min, y_max)
-            ax.set_title(f'Миграция кластеров (окно: {window_days} дня)\nДата: {current_day.strftime("%Y-%m-%d")}', fontsize=16)
+            ax.set_title(f'Миграция кластеров (окно: {window_days} дня)\nДата: {current_ts.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
             ax.set_xlabel('UMAP компонента 1', fontsize=12)
             ax.set_ylabel('UMAP компонента 2', fontsize=12)
             ax.grid(True)
             return points,
 
         ani = FuncAnimation(fig, update, frames=range(window_days, len(frame_timestamps)), repeat=False)
-        ani = FuncAnimation(fig, update, frames=range(window_days, len(unique_days)), repeat=False)
         ani.save(save_path, writer='pillow', fps=5)
         plt.close(fig)
         self.logger.info("Миграционная анимация успешно создана.")

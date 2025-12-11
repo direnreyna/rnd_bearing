@@ -77,7 +77,7 @@ UMAP_ANIMATION_FILENAME = f'{EXPERIMENT_NAME}_umap_evolution.gif'
 UMAP_ANIMATION_FILEPATH = EDA_PLOTS_DIR / UMAP_ANIMATION_FILENAME
 UMAP_SAMPLE_FRACTION = 1.0 # Какую долю последних данных использовать для UMAP (1.0 = все данные)
 # Единица измерения частоты кадров: 'D' - день, 'H' - час, 'T' или 'min' - минута
-ANIMATION_FREQUENCY = 'T'
+ANIMATION_FREQUENCY = 'H'
 # Интервал: сколько единиц частоты в одном кадре. 
 # 'H' и 6 = 1 кадр каждые 6 часов. 'T' и 10 = 1 кадр каждые 10 минут.
-ANIMATION_INTERVAL = 2
+ANIMATION_INTERVAL = 4
