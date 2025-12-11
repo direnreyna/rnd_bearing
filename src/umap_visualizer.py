@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import Normalize
+import matplotlib.patches as patches
 
 class UMAPVisualizer:
     """
@@ -19,7 +20,7 @@ class UMAPVisualizer:
     анимированную визуализацию эволюции состояния подшипников.
     """
 
-    def __init__(self, output_path: pathlib.Path, logger: logging.Logger, sample_fraction: float, animation_frequency: str, animation_interval: int):
+    def __init__(self, output_path: pathlib.Path, logger: logging.Logger, sample_fraction: float, animation_frequency: str, animation_interval: int, experiment_name: str, migration_window_days: int):
         """
         Инициализирует визуализатор.
 
@@ -29,12 +30,16 @@ class UMAPVisualizer:
             animation_frequency (str): Единица измерения частоты кадров ('D', 'H', 'T').
             animation_interval (int): Интервал между кадрами.
             sample_fraction (float): Доля данных для использования в анализе.
+            experiment_name (str): Имя текущего эксперимента.
+            migration_window_days (int): Длина окна для миграционной гифки.
         """
         self.output_path = output_path
         self.logger = logger
         self.sample_fraction = sample_fraction
         self.animation_frequency = animation_frequency
         self.animation_interval = animation_interval
+        self.experiment_name = experiment_name
+        self.migration_window_days = migration_window_days
 
     def run(self, spectral_df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -107,7 +112,7 @@ class UMAPVisualizer:
         
         # Инициализация и обучение UMAP
         self.logger.info("Обучение UMAP модели...")
-        reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, n_components=2, random_state=42)
+        reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, n_components=2, random_state=42, verbose=True)
         embedding = reducer.fit_transform(scaled_features)
         
         # Собираем результат в новый DataFrame
@@ -165,6 +170,25 @@ class UMAPVisualizer:
         
         return frame_timestamps
 
+    def _draw_progress_bars(self, ax, current_frame_idx, total_real_frames, pause_start_idx, total_all_frames):
+        """Рисует прогресс-бар анимации и паузы внизу графика."""
+        # Прогресс основной анимации (синий)
+        progress = min(1.0, (current_frame_idx + 1) / total_real_frames)
+        ax.add_patch(patches.Rectangle((0, -0.1), 1, 0.02, facecolor='#E0E0E0', transform=ax.transAxes, clip_on=False, zorder=5))
+        ax.add_patch(patches.Rectangle((0, -0.1), progress, 0.02, facecolor='#007ACC', transform=ax.transAxes, clip_on=False, zorder=5))
+        
+        # Прогресс паузы (оранжевый) - работает как обратный отсчет
+        pause_progress = 1.0 # По умолчанию бар полный
+        if current_frame_idx >= pause_start_idx:
+            # Считаем, сколько кадров осталось до конца паузы
+            total_pause_frames = total_all_frames - pause_start_idx
+            remaining_pause_frames = total_all_frames - current_frame_idx - 1
+            if total_pause_frames > 0:
+                pause_progress = remaining_pause_frames / total_pause_frames
+
+        ax.add_patch(patches.Rectangle((0, -0.13), 1, 0.02, facecolor='#E0E0E0', transform=ax.transAxes, clip_on=False))
+        ax.add_patch(patches.Rectangle((0, -0.13), pause_progress, 0.02, facecolor='#FF4500', transform=ax.transAxes, clip_on=False))
+
     def _create_animation_by_bearing(self, df: pd.DataFrame):
         """Создает GIF-анимацию, где точки раскрашены по номеру подшипника."""
         
@@ -174,19 +198,18 @@ class UMAPVisualizer:
         # Подготовка данных для анимации
         frame_timestamps = self._generate_frame_timestamps(df)
 
-        ### # Добавляем паузу в конце, повторяя последний кадр
-        ### fps = 5  # Кадров в секунду
-        ### pause_sec = 5 # Длительность паузы в секундах
-        ### last_day = unique_days[-1]
-        ### unique_days.extend([last_day] * (fps * pause_sec))
-
+        # Определяем точку начала паузы
+        total_real_frames = len(set(frame_timestamps))
+        pause_start_index = total_real_frames -1
+        
         fig, ax = plt.subplots(figsize=(12, 10))
 
         # Находим глобальные границы для осей, чтобы график не "прыгал"
         x_min, x_max = df['umap_x'].min() - 1, df['umap_x'].max() + 1
         y_min, y_max = df['umap_y'].min() - 1, df['umap_y'].max() + 1
 
-        def update(frame_timestamp):
+        def update(frame_idx):
+            frame_timestamp = frame_timestamps[frame_idx]
             ax.clear()
             
             data_so_far = df[df['timestamp'] <= frame_timestamp]
@@ -200,14 +223,15 @@ class UMAPVisualizer:
             
             ax.set_xlim(x_min, x_max)
             ax.set_ylim(y_min, y_max)
-            ax.set_title(f'Эволюция кластеров по подшипникам\nДата: {frame_timestamp.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
+            ax.set_title(f'Эволюция кластеров по подшипникам\n(IMS Dataset: {self.experiment_name}) | Дата: {frame_timestamp.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
             ax.set_xlabel('UMAP компонента 1', fontsize=12)
             ax.set_ylabel('UMAP компонента 2', fontsize=12)
             ax.grid(True)
+            self._draw_progress_bars(ax, frame_idx, total_real_frames, pause_start_index, len(frame_timestamps))
             return artists,
 
         # Создаем анимацию
-        ani = FuncAnimation(fig, update, frames=frame_timestamps, repeat=False)
+        ani = FuncAnimation(fig, update, frames=len(frame_timestamps), repeat=False)
         ani.save(save_path, writer='pillow', fps=5)
         plt.close(fig)
         self.logger.info("Анимация по подшипникам успешно создана.")
@@ -217,17 +241,15 @@ class UMAPVisualizer:
 
         save_path = self.output_path.with_name(f"{self.output_path.stem}_by_time.gif")
         self.logger.info(f"Создание GIF-анимации по времени... Это может занять несколько минут. Результат будет в {save_path}")
-
+        
         ### df['day'] = df['timestamp'].dt.date
         ### unique_days = sorted([d for d in df['day'].unique() if pd.notna(d)])
         frame_timestamps = self._generate_frame_timestamps(df)
 
-        ### # Добавляем паузу в конце
-        ### fps = 5
-        ### pause_sec = 5
-        ### last_day = unique_days[-1]
-        ### unique_days.extend([last_day] * (fps * pause_sec))
-
+        # Определяем точку начала паузы для прогресс-бара
+        total_real_frames = len(set(frame_timestamps))
+        pause_start_index = total_real_frames - 1
+        
         fig, ax = plt.subplots(figsize=(12, 10))
 
         x_min, x_max = df['umap_x'].min() - 1, df['umap_x'].max() + 1
@@ -237,8 +259,8 @@ class UMAPVisualizer:
         norm = Normalize(df['timestamp'].min().timestamp(), df['timestamp'].max().timestamp())
         cmap = plt.get_cmap('plasma')
 
-
-        def update(frame_timestamp):
+        def update(frame_idx):
+            frame_timestamp = frame_timestamps[frame_idx]
             ax.clear()
             data_so_far = df[df['timestamp'] <= frame_timestamp]
             
@@ -250,13 +272,14 @@ class UMAPVisualizer:
 
             ax.set_xlim(x_min, x_max)
             ax.set_ylim(y_min, y_max)
-            ax.set_title(f'Эволюция процесса деградации по времени\nДата: {frame_timestamp.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
+            ax.set_title(f'Эволюция процесса деградации по времени\n(IMS Dataset: {self.experiment_name}) | Дата: {frame_timestamp.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
             ax.set_xlabel('UMAP компонента 1', fontsize=12)
             ax.set_ylabel('UMAP компонента 2', fontsize=12)
             ax.grid(True)
+            self._draw_progress_bars(ax, frame_idx, total_real_frames, pause_start_index, len(frame_timestamps))
             return points,
-        
-        ani = FuncAnimation(fig, update, frames=frame_timestamps, repeat=False)
+
+        ani = FuncAnimation(fig, update, frames=len(frame_timestamps), repeat=False)
         ani.save(save_path, writer='pillow', fps=5)
         plt.close(fig)
         self.logger.info("Анимация по времени успешно создана.")
@@ -267,22 +290,23 @@ class UMAPVisualizer:
         save_path = self.output_path.with_name(f"{self.output_path.stem}_migration.gif")
         self.logger.info(f"Создание миграционной GIF-анимации... Результат будет в {save_path}")
 
-        ### df['day'] = df['timestamp'].dt.date
-        ### unique_days = sorted([d for d in df['day'].unique() if pd.notna(d)])
         frame_timestamps = self._generate_frame_timestamps(df)
+
+        # Определяем точку начала паузы для прогресс-бара
+        total_real_frames = len(set(frame_timestamps))
+        pause_start_index = total_real_frames - 1
 
         fig, ax = plt.subplots(figsize=(12, 10))
         x_min, x_max = df['umap_x'].min() - 1, df['umap_x'].max() + 1
         y_min, y_max = df['umap_y'].min() - 1, df['umap_y'].max() + 1
         
         # Окно в днях для отображения
-        window_days = 3
+        window_days = self.migration_window_days
 
         def update(frame_idx):
             ax.clear()
             
             # Определяем текущий день и границы окна
-
             current_ts = frame_timestamps[frame_idx]
             start_ts = current_ts - pd.to_timedelta(window_days, unit='d')
             
@@ -300,13 +324,16 @@ class UMAPVisualizer:
 
             ax.set_xlim(x_min, x_max)
             ax.set_ylim(y_min, y_max)
-            ax.set_title(f'Миграция кластеров (окно: {window_days} дня)\nДата: {current_ts.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
+            ax.set_title(f'Миграция кластеров (окно: {window_days} дня)\n(IMS Dataset: {self.experiment_name}) | Дата: {current_ts.strftime("%Y-%m-%d %H:%M")}', fontsize=16)
             ax.set_xlabel('UMAP компонента 1', fontsize=12)
             ax.set_ylabel('UMAP компонента 2', fontsize=12)
             ax.grid(True)
+            self._draw_progress_bars(ax, frame_idx, total_real_frames, pause_start_index, len(frame_timestamps))
             return points,
 
-        ani = FuncAnimation(fig, update, frames=range(window_days, len(frame_timestamps)), repeat=False)
+        # Запускаем анимацию со сдвигом, чтобы окно было полным
+        start_frame = len(pd.date_range(start=df['timestamp'].min(), end=df['timestamp'].min() + pd.to_timedelta(window_days, unit='d'), freq=f"{self.animation_interval}{self.animation_frequency}"))
+        ani = FuncAnimation(fig, update, frames=range(start_frame, len(frame_timestamps)), repeat=False)
         ani.save(save_path, writer='pillow', fps=5)
         plt.close(fig)
         self.logger.info("Миграционная анимация успешно создана.")

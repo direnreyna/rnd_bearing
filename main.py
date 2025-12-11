@@ -28,7 +28,7 @@ def main():
     feature_df = builder.build_dataset()
 
     # Шаг 2: Базовый анализ и визуализация
-    analyzer = DataAnalyzer(feature_df=feature_df, plots_dir=config.EDA_PLOTS_DIR, logger=logger)
+    analyzer = DataAnalyzer(feature_df=feature_df, plots_dir=config.EDA_PLOTS_DIR, logger=logger, experiment_name=config.EXPERIMENT_NAME)
     analyzer.run()
 
     # Шаг 3: Продвинутый анализ
@@ -54,7 +54,9 @@ def main():
         sample_fraction=config.UMAP_SAMPLE_FRACTION,
         #model_path=config.UMAP_MODEL_FILEPATH,
         animation_frequency=config.ANIMATION_FREQUENCY,
-        animation_interval=config.ANIMATION_INTERVAL
+        animation_interval=config.ANIMATION_INTERVAL,
+        experiment_name=config.EXPERIMENT_NAME,
+        migration_window_days=config.MIGRATION_WINDOW_DAYS
     )
     processed_spectral_df = umap_visualizer.run(spectral_df)
     
