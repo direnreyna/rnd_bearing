@@ -9,6 +9,9 @@ __pycache__/
 # Environment
 venv_bearing/
 
+# Данные
+plots/
+
 # Distribution / packaging
 .Python
 build/

@@ -8,6 +8,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 from tqdm import tqdm
 from .derivative_builder import DerivativeBuilder
+import config
 
 class SpectralAnalyzer:
     """
@@ -38,6 +39,9 @@ class SpectralAnalyzer:
         else:
             self.logger.info("Кэш спектральных признаков не найден. Запускаем полный анализ...")
             spectral_df = self._create_spectral_dataset()
+
+            # Преобразование str в datetime сразу после создания. Это необходимо для корректного расчета RUL
+            spectral_df['timestamp'] = pd.to_datetime(spectral_df['timestamp'], format=config.TIMESTAMP_FORMAT)
 
             # Сразу после создания обогащаем датасет производными
             derivative_builder = DerivativeBuilder(logger=self.logger)

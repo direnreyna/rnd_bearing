@@ -13,7 +13,7 @@ PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True) # Создаем папк�
 # Путь к каталогу с сырыми данными
 RAW_DATA_SOURCE_DIR = pathlib.Path('/media/Cruiser/rnd_data/data')
 # Имя эксперимента (папки), который мы обрабатываем
-EXPERIMENT_NAME = '2nd_test' ## '3rd_test' / '2nd_test' / '3rd_test'
+EXPERIMENT_NAME = '1st_test' ## '1st_test' / '2nd_test' / '3rd_test'
 # Полный путь к данным для текущего эксперимента
 RAW_EXPERIMENT_DIR = RAW_DATA_SOURCE_DIR / EXPERIMENT_NAME
 
@@ -29,6 +29,10 @@ EXTENDED_DATA_FILEPATH = PROCESSED_DATA_DIR / EXTENDED_DATA_FILENAME
 # Имена файлов для спектрального анализа
 SPECTRAL_FEATURES_FILENAME = f'{EXPERIMENT_NAME}_spectral_features.parquet'
 SPECTRAL_FEATURES_FILEPATH = PROCESSED_DATA_DIR / SPECTRAL_FEATURES_FILENAME
+
+# ФОРМАТ ВРЕМЕННОЙ МЕТКИ (для парсинга из имени файла)
+# Пример: 2003.10.22.12.06.24 -> %Y.%m.%d.%H.%M.%S
+TIMESTAMP_FORMAT = '%Y.%m.%d.%H.%M.%S'
 
 # Описание структуры экспериментов
 EXPERIMENT_CHANNELS = {
@@ -75,7 +79,7 @@ DEBUG = True # Включить/выключить вывод детальной
 # UMAP визуализация
 UMAP_ANIMATION_FILENAME = f'{EXPERIMENT_NAME}_umap_evolution.gif'
 UMAP_ANIMATION_FILEPATH = EDA_PLOTS_DIR / UMAP_ANIMATION_FILENAME
-UMAP_SAMPLE_FRACTION = 0.5 # Какую долю последних данных использовать для UMAP (1.0 = все данные)
+UMAP_SAMPLE_FRACTION = 1.0 # Какую долю последних данных использовать для UMAP (1.0 = все данные)
 # Единица измерения частоты кадров: 'D' - день, 'H' - час, 'T' или 'min' - минута
 ANIMATION_FREQUENCY = 'D'
 # КАРТА ПОДШИПНИКОВ, ДОШЕДШИХ ДО ОТКАЗА (TOA)

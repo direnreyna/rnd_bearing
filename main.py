@@ -9,6 +9,7 @@ from src.app_logger import AppLogger
 from src.data_analyzer import DataAnalyzer
 from src.advanced_analyzer import AdvancedDataAnalyzer
 from src.spectral_analyzer import SpectralAnalyzer
+from src.rul_builder import RULBuilder
 from src.umap_visualizer import UMAPVisualizer
 
 # Настраиваем pandas для более удобного вывода в консоль
@@ -39,26 +40,29 @@ def main():
     spectral_analyzer = SpectralAnalyzer(raw_data_path=config.RAW_EXPERIMENT_DIR, spectral_filepath=config.SPECTRAL_FEATURES_FILEPATH, logger=logger, config=config, window_size=config.WINDOW_SIZE, step=config.STEP, n_peaks=config.N_PEAKS, sampling_rate=config.SAMPLING_RATE)
     spectral_df = spectral_analyzer.run()
 
-    # Шаг 5: Предобработка спектральных данных и UMAP визуализация
+    # Шаг 5: Создание целевой переменной (RUL)
+    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger)
+    processed_spectral_df = rul_builder.run(spectral_df)
+
+    # Шаг 6: Предобработка спектральных данных и UMAP визуализация
     umap_visualizer = UMAPVisualizer(output_path=config.UMAP_ANIMATION_FILEPATH, logger=logger, sample_fraction=config.UMAP_SAMPLE_FRACTION, animation_frequency=config.ANIMATION_FREQUENCY, animation_interval=config.ANIMATION_INTERVAL, experiment_name=config.EXPERIMENT_NAME, migration_window_days=config.MIGRATION_WINDOW_DAYS)
     # Запускаем визуализацию для каждого уровня производной
-    umap_visualizer.run(spectral_df, derivative_level='d0')
-    umap_visualizer.run(spectral_df, derivative_level='d1')
-    umap_visualizer.run(spectral_df, derivative_level='d2')
+    umap_visualizer.run(processed_spectral_df, derivative_level='d0')
+    umap_visualizer.run(processed_spectral_df, derivative_level='d1')
+    umap_visualizer.run(processed_spectral_df, derivative_level='d2')
 
-    
-    # Шаг 6: Вывод отладочной информации (если включено в конфиге)
+    # Шаг 7: Вывод отладочной информации (если включено в конфиге)
     if config.DEBUG:
         logger.info("--- РЕЖИМ ОТЛАДКИ АКТИВИРОВАН ---")
-        logger.info(f"Форма спектрального датасета: {spectral_df.shape}")
-        logger.info(f"Первые 5 строк спектрального датасета:\n{spectral_df.head().to_string()}")
+        logger.info(f"Форма финального датасета: {processed_spectral_df.shape}")
+        logger.info(f"Первые 5 строк финального датасета:\n{processed_spectral_df.head().to_string()}")
         
         with io.StringIO() as buffer:
-            spectral_df.info(buf=buffer)
+            processed_spectral_df.info(buf=buffer)
             info_str = buffer.getvalue()
             logger.info(f"\nИнформация о спектральном датасете:\n{info_str}")
-        
-        logger.info(f"Статистическая сводка по спектральному датасету:\n{spectral_df.describe().to_string()}")
+
+        logger.info(f"Статистическая сводка по финальному датасету:\n{processed_spectral_df.describe().to_string()}")
         logger.info("--- КОНЕЦ СЕКЦИИ ОТЛАДКИ ---")
     
     logger.info("Пайплайн успешно завершен.")
