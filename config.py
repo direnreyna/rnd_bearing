@@ -30,6 +30,10 @@ EXTENDED_DATA_FILEPATH = PROCESSED_DATA_DIR / EXTENDED_DATA_FILENAME
 SPECTRAL_FEATURES_FILENAME = f'{EXPERIMENT_NAME}_spectral_features.parquet'
 SPECTRAL_FEATURES_FILEPATH = PROCESSED_DATA_DIR / SPECTRAL_FEATURES_FILENAME
 
+# ФАЙЛ ДЛЯ СОХРАНЕНИЯ ОБУЧЕННОЙ МОДЕЛИ
+MODEL_FILENAME = f'{EXPERIMENT_NAME}_lgbm_rul_model.joblib'
+MODEL_FILEPATH = PROCESSED_DATA_DIR / MODEL_FILENAME
+
 # ФОРМАТ ВРЕМЕННОЙ МЕТКИ (для парсинга из имени файла)
 # Пример: 2003.10.22.12.06.24 -> %Y.%m.%d.%H.%M.%S
 TIMESTAMP_FORMAT = '%Y.%m.%d.%H.%M.%S'
@@ -80,6 +84,21 @@ DEBUG = True # Включить/выключить вывод детальной
 UMAP_ANIMATION_FILENAME = f'{EXPERIMENT_NAME}_umap_evolution.gif'
 UMAP_ANIMATION_FILEPATH = EDA_PLOTS_DIR / UMAP_ANIMATION_FILENAME
 UMAP_SAMPLE_FRACTION = 1.0 # Какую долю последних данных использовать для UMAP (1.0 = все данные)
+# УПРАВЛЕНИЕ АНИМАЦИЕЙ (отключение создания)
+ENABLE_UMAP_GIFS = False # Если False, то Шаг 8 будет пропущен (экономия времени).
+
+# ТЮНИНГ МОДЕЛИ
+ENABLE_MODEL_TUNING = False # Включить/выключить тюнинг (RandomizedSearchCV)
+# Параметры для RandomizedSearchCV
+LGBM_TUNING_PARAMS = {
+    'n_estimators': [300, 500, 700],
+    'learning_rate': [0.01, 0.05, 0.1],
+    'num_leaves': [20, 31, 50],
+    'max_depth': [-1, 5, 10],
+    'min_child_samples': [10, 20, 30]
+}
+N_ITER_SEARCH = 10 # Количество итераций для RandomizedSearchCV
+
 # Единица измерения частоты кадров: 'D' - день, 'H' - час, 'T' или 'min' - минута
 ANIMATION_FREQUENCY = 'D'
 # КАРТА ПОДШИПНИКОВ, ДОШЕДШИХ ДО ОТКАЗА (TOA)

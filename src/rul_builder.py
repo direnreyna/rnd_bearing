@@ -2,6 +2,7 @@
 
 import logging
 import pandas as pd
+import numpy as np
 from typing import Dict, Any
 
 class RULBuilder:
@@ -56,9 +57,12 @@ class RULBuilder:
                 return rul_timedelta.total_seconds() / 3600
             else:
                 # Если подшипник "здоровый" (не сломался к концу эксперимента) - RUL = NaN
-                return pd.NA # Используем NA для лучшей совместимости с pandas
+                return np.nan # Используем NA для лучшей совместимости с pandas
 
         enriched_df['RUL_hours'] = enriched_df.apply(calculate_rul, axis=1)
+
+        #  ошибки LightGBM: Явное преобразование в float64
+        enriched_df['RUL_hours'] = enriched_df['RUL_hours'].astype('float64')
 
         # 3. Добавляем фильтрацию (хотя это лучше делать на этапе ML, но для понимания)
         initial_shape = enriched_df.shape[0]
