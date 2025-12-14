@@ -3,6 +3,7 @@
 import io
 import pandas as pd
 
+import mlflow
 import config
 from src.dataset_builder import DatasetBuilder
 from src.app_logger import AppLogger
@@ -39,6 +40,13 @@ def main():
     ### adv_analyzer = AdvancedDataAnalyzer(plots_dir=config.EDA_PLOTS_DIR, extended_filepath=config.EXTENDED_DATA_FILEPATH, logger=logger, config=config)
     ### extended_df = adv_analyzer.run(feature_df)
 
+    # Настройка MLflow Tracking
+    if config.ENABLE_MLFLOW_TRACKING:
+        mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(config.MLFLOW_EXPERIMENT_NAME)
+        logger.info(f"MLflow настроен. Tracking URI: {config.MLFLOW_TRACKING_URI}")
+        logger.info(f"MLflow Experiment: {config.MLFLOW_EXPERIMENT_NAME}")
+    
     # Извлечение спектральных признаков
     spectral_analyzer = SpectralAnalyzer(raw_data_path=config.RAW_EXPERIMENT_DIR, spectral_filepath=config.SPECTRAL_FEATURES_FILEPATH, logger=logger, config=config, window_size=config.WINDOW_SIZE, step=config.STEP, n_peaks=config.N_PEAKS, sampling_rate=config.SAMPLING_RATE)
     spectral_df = spectral_analyzer.run()
@@ -48,7 +56,7 @@ def main():
     transformed_df = baseline_transformer.run(spectral_df)
 
     # Создание целевой переменной (RUL)
-    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger)
+    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger, rul_min_threshold_hours=config.RUL_MIN_THRESHOLD_HOURS)
     processed_spectral_df = rul_builder.run(transformed_df)
 
     # Создание и обучение базовой модели (Baseline)

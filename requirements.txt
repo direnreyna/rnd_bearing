@@ -11,3 +11,6 @@ scikit-learn
 umap-learn
 pillow
 lightgbm
+mlflow
+optuna
+optuna-integration

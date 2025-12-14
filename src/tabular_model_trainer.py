@@ -1,19 +1,20 @@
 # src/tabular_model_trainer.py
 
-
 import logging
 import pathlib
+import optuna
+import mlflow
+import joblib
+import config
+import numpy as np
 import pandas as pd
 import lightgbm as lgb
 
+from optuna.integration import LightGBMPruningCallback
+import lightgbm.callback as lgb_callback
 from typing import Tuple, Dict, Any, Optional
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split ##, RandomizedSearchCV
 from sklearn.metrics import mean_squared_error, r2_score
-import numpy as np
-
-import joblib
-
-import config
 
 class TabularModelTrainer:
     """
@@ -51,7 +52,9 @@ class TabularModelTrainer:
         # 2. Тюнинг гиперпараметров (если включено)
         best_params = {}
         if config.ENABLE_MODEL_TUNING:
-            best_params = self._tune_hyperparameters(X_train, y_train, config.LGBM_TUNING_PARAMS)
+            best_params = self._tune_hyperparameters(X_train, y_train)
+            self.logger.info(f"Optuna завершен. Лучшие параметры: {best_params}")
+            ### best_params = self._tune_hyperparameters(X_train, y_train, config.LGBM_TUNING_PARAMS)
 
         # 3. Обучение модели
         self.model = self._train_model(X_train, y_train, best_params)
@@ -87,33 +90,100 @@ class TabularModelTrainer:
 
         return self.model, X_test, y_test, y_pred, feature_importance
     
-    def _tune_hyperparameters(self, X_train: pd.DataFrame, y_train: pd.Series, param_grid: Dict[str, Any]) -> Dict[str, Any]: ## ДОБАВЛЕН БЛОК
-        """
-        Использует RandomizedSearchCV для поиска оптимальных гиперпараметров.
-        """
-        self.logger.info(f"Запуск RandomizedSearchCV: {config.N_ITER_SEARCH} итераций...")
+###    def _tune_hyperparameters(self, X_train: pd.DataFrame, y_train: pd.Series, param_grid: Dict[str, Any]) -> Dict[str, Any]: ## ДОБАВЛЕН БЛОК
+###        """
+###        Использует RandomizedSearchCV для поиска оптимальных гиперпараметров.
+###        """
+###        self.logger.info(f"Запуск RandomizedSearchCV: {config.N_ITER_SEARCH} итераций...")
+###
+###        # Базовая модель для поиска
+###        lgbm = lgb.LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1)
+###
+###        # Randomized Search
+###        random_search = RandomizedSearchCV(
+###            estimator=lgbm,
+###            param_distributions=param_grid,
+###            n_iter=config.N_ITER_SEARCH,
+###            scoring='neg_mean_squared_error',
+###            cv=3, # 3-кратная кросс-валидация
+###            verbose=1,
+###            random_state=42,
+###            n_jobs=-1
+###        )
+###        
+###        random_search.fit(X_train, y_train)
+###
+###        self.logger.info(f"Тюнинг завершен. Лучший MSE: {-random_search.best_score_:.4f}")
+###        self.logger.info(f"Лучшие параметры: {random_search.best_params_}")
+###
+###        return random_search.best_params_
 
-        # Базовая модель для поиска
-        lgbm = lgb.LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1)
+    def _tune_hyperparameters(self, X_train: pd.DataFrame, y_train: pd.Series) -> Dict[str, Any]:
+        """
+        Использует Optuna для Байесовской оптимизации гиперпараметров и логирует результаты в MLflow.
+        """
+        self.logger.info(f"Запуск Optuna Байесовской оптимизации: {config.OPTUNA_N_TRIALS} проб.")
 
-        # Randomized Search
-        random_search = RandomizedSearchCV(
-            estimator=lgbm,
-            param_distributions=param_grid,
-            n_iter=config.N_ITER_SEARCH,
-            scoring='neg_mean_squared_error',
-            cv=3, # 3-кратная кросс-валидация
-            verbose=1,
-            random_state=42,
-            n_jobs=-1
+        # Определение objective-функции
+        def objective(trial: optuna.Trial):
+            with mlflow.start_run(nested=True) as run:
+                # 1. Определение пространства поиска (на основе config.LGBM_OPTUNA_PARAMS)
+                param = {
+                    'objective': 'regression',
+                    'metric': 'rmse',
+                    'n_estimators': trial.suggest_int('n_estimators', config.LGBM_OPTUNA_PARAMS['n_estimators'][0], config.LGBM_OPTUNA_PARAMS['n_estimators'][1]),
+                    'learning_rate': trial.suggest_float('learning_rate', config.LGBM_OPTUNA_PARAMS['learning_rate'][0], config.LGBM_OPTUNA_PARAMS['learning_rate'][1]),
+                    'num_leaves': trial.suggest_int('num_leaves', config.LGBM_OPTUNA_PARAMS['num_leaves'][0], config.LGBM_OPTUNA_PARAMS['num_leaves'][1]),
+                    'max_depth': trial.suggest_int('max_depth', config.LGBM_OPTUNA_PARAMS['max_depth'][0], config.LGBM_OPTUNA_PARAMS['max_depth'][1]),
+                    'min_child_samples': trial.suggest_int('min_child_samples', config.LGBM_OPTUNA_PARAMS['min_child_samples'][0], config.LGBM_OPTUNA_PARAMS['min_child_samples'][1]),
+                    'reg_alpha': trial.suggest_float('reg_alpha', config.LGBM_OPTUNA_PARAMS['reg_alpha'][0], config.LGBM_OPTUNA_PARAMS['reg_alpha'][1]),
+                    'reg_lambda': trial.suggest_float('reg_lambda', config.LGBM_OPTUNA_PARAMS['reg_lambda'][0], config.LGBM_OPTUNA_PARAMS['reg_lambda'][1]),
+                    'random_state': 42,
+                    'n_jobs': -1,
+                    'verbose': -1,
+                }
+                
+                # Логирование параметров в MLflow
+                mlflow.log_params(param)
+
+                # 2. Обучение с кросс-валидацией
+                lgbm = lgb.LGBMRegressor(**param)
+                
+                # Используем кросс-валидацию (KFold, 3-Fold)
+                # KFold не подходит из-за временных рядов, но для Optuna KFold чаще используется.
+                # Для упрощения MVP, пока используем train_test_split внутри Optuna
+                
+                # Разбиваем train set на Optuna_train и Optuna_val (20% на валидацию)
+                X_opt_train, X_opt_val, y_opt_train, y_opt_val = train_test_split(
+                    X_train, y_train, test_size=0.2, random_state=42, shuffle=True
+                )
+
+                ### lgbm.fit(X_opt_train, y_opt_train)
+                lgbm.fit(X_opt_train, y_opt_train, eval_set=[(X_opt_val, y_opt_val)], eval_metric='rmse', callbacks=[LightGBMPruningCallback(trial, 'rmse'), lgb_callback.early_stopping(100)])
+
+                # 3. Предсказание и оценка на валидационном наборе
+                y_pred = lgbm.predict(X_opt_val)
+                rmse = np.sqrt(mean_squared_error(y_opt_val, np.array(y_pred)))
+                
+                # Логирование метрики в MLflow
+                mlflow.log_metric("rmse", rmse)
+                
+                return rmse # Optuna минимизирует возвращаемое значение
+
+        # Запуск Optuna Study
+        study = optuna.create_study(
+            direction='minimize',
+            study_name=f'lgbm_rul_study_{self.experiment_name}',
+            storage=config.OPTUNA_STORAGE_URI,
+            load_if_exists=True
         )
-        
-        random_search.fit(X_train, y_train)
 
-        self.logger.info(f"Тюнинг завершен. Лучший MSE: {-random_search.best_score_:.4f}")
-        self.logger.info(f"Лучшие параметры: {random_search.best_params_}")
+        study.optimize(objective, n_trials=config.OPTUNA_N_TRIALS, timeout=config.OPTUNA_TIMEOUT, show_progress_bar=True)
 
-        return random_search.best_params_
+        self.logger.info(f"Тюнинг завершен. Лучший RMSE: {study.best_value:.4f}")
+        self.logger.info(f"Лучшие параметры: {study.best_params}")
+
+        return study.best_params
 
     def _prepare_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
         """
@@ -212,17 +282,20 @@ class TabularModelTrainer:
         """
         Делает предсказания и оценивает модель.
         """
+        assert self.model is not None ## Для устранения Pylance Optional warning
         y_pred = self.model.predict(X_test)
         # Рассчитываем MSE и RMSE
-        mse = mean_squared_error(y_test, y_pred)
+        mse = mean_squared_error(y_test, np.array(y_pred))
         rmse = np.sqrt(mse)
 
         # Рассчитываем R2 для справки
-        r2 = r2_score(y_test, y_pred)
+        r2 = r2_score(y_test, np.array(y_pred))
 
         self.logger.info(f"R2 (Коэффициент детерминации): {r2:.4f}")
 
         # Преобразуем numpy-массив в pandas Series для удобства дальнейшей работы
-        y_pred_series = pd.Series(y_pred, index=y_test.index)
+        ### y_pred_series = pd.Series(y_pred, index=y_test.index)
+
+        y_pred_series = pd.Series(np.array(y_pred), index=y_test.index)
 
         return y_pred_series, rmse
