@@ -11,7 +11,8 @@ venv_bearing/
 
 # 3. Данные проекта
 # Игнорируем большие файлы данных и кэш
-data/
+data/*.parquet
+data/*.joblib
 
 # 4. Графики и картинки
 plots/*.gif
