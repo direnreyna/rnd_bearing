@@ -9,6 +9,7 @@ from src.app_logger import AppLogger
 from src.data_analyzer import DataAnalyzer
 from src.advanced_analyzer import AdvancedDataAnalyzer
 from src.spectral_analyzer import SpectralAnalyzer
+from src.baseline_transformer import BaselineTransformer
 from src.rul_builder import RULBuilder
 from src.tabular_model_trainer import TabularModelTrainer
 from src.model_evaluator import ModelEvaluator
@@ -26,36 +27,40 @@ def main():
     logger = AppLogger.get_logger(__name__, config.LOG_FILEPATH)
     logger.info("Запуск MVP по предиктивному обслуживанию")
 
-    # Шаг 1: Подготовка базового датасета
-    builder = DatasetBuilder(raw_data_path=config.RAW_EXPERIMENT_DIR, processed_filepath=config.PROCESSED_DATA_FILEPATH, logger=logger)
-    feature_df = builder.build_dataset()
+    ### # Подготовка базового датасета
+    ### builder = DatasetBuilder(raw_data_path=config.RAW_EXPERIMENT_DIR, processed_filepath=config.PROCESSED_DATA_FILEPATH, logger=logger)
+    ### feature_df = builder.build_dataset()
+    ### 
+    ### # Базовый анализ и визуализация (EDA)
+    ### analyzer = DataAnalyzer(feature_df=feature_df, plots_dir=config.EDA_PLOTS_DIR, logger=logger, experiment_name=config.EXPERIMENT_NAME)
+    ### analyzer.run()
+    ### 
+    ### # Продвинутый анализ (EDA-2)
+    ### adv_analyzer = AdvancedDataAnalyzer(plots_dir=config.EDA_PLOTS_DIR, extended_filepath=config.EXTENDED_DATA_FILEPATH, logger=logger, config=config)
+    ### extended_df = adv_analyzer.run(feature_df)
 
-    # Шаг 2: Базовый анализ и визуализация
-    analyzer = DataAnalyzer(feature_df=feature_df, plots_dir=config.EDA_PLOTS_DIR, logger=logger, experiment_name=config.EXPERIMENT_NAME)
-    analyzer.run()
-
-    # Шаг 3: Продвинутый анализ
-    adv_analyzer = AdvancedDataAnalyzer(plots_dir=config.EDA_PLOTS_DIR, extended_filepath=config.EXTENDED_DATA_FILEPATH, logger=logger, config=config)
-    extended_df = adv_analyzer.run(feature_df)
-
-    # Шаг 4: Извлечение спектральных признаков
+    # Извлечение спектральных признаков
     spectral_analyzer = SpectralAnalyzer(raw_data_path=config.RAW_EXPERIMENT_DIR, spectral_filepath=config.SPECTRAL_FEATURES_FILEPATH, logger=logger, config=config, window_size=config.WINDOW_SIZE, step=config.STEP, n_peaks=config.N_PEAKS, sampling_rate=config.SAMPLING_RATE)
     spectral_df = spectral_analyzer.run()
 
-    # Шаг 5: Создание целевой переменной (RUL)
-    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger)
-    processed_spectral_df = rul_builder.run(spectral_df)
+    # Трансформация признаков (Baseline Centering)
+    baseline_transformer = BaselineTransformer(logger=logger, baseline_windows_count=config.BASELINE_WINDOWS_COUNT)
+    transformed_df = baseline_transformer.run(spectral_df)
 
-    # Шаг 6: Создание и обучение базовой модели (Baseline)
+    # Создание целевой переменной (RUL)
+    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger)
+    processed_spectral_df = rul_builder.run(transformed_df)
+
+    # Создание и обучение базовой модели (Baseline)
     trainer = TabularModelTrainer(logger=logger, experiment_name=config.EXPERIMENT_NAME)
-    # Возвращаем все результаты для Шага 7 (визуализация оценки)
+    # Возвращаем все результаты для визуализации оценки
     model, X_test, y_test, y_pred, feature_importance = trainer.run(processed_spectral_df)
 
-    # Шаг 7: Оценка и визуализация результатов модели
+    # Оценка и визуализация результатов модели
     evaluator = ModelEvaluator(plots_dir=config.EDA_PLOTS_DIR, logger=logger)
     evaluator.run(X_test, y_test, y_pred, feature_importance)
 
-    # Шаг 8: Предобработка спектральных данных и UMAP визуализация
+    # Предобработка спектральных данных и UMAP визуализация
     if config.ENABLE_UMAP_GIFS: 
         umap_visualizer = UMAPVisualizer(output_path=config.UMAP_ANIMATION_FILEPATH, logger=logger, sample_fraction=config.UMAP_SAMPLE_FRACTION, animation_frequency=config.ANIMATION_FREQUENCY, animation_interval=config.ANIMATION_INTERVAL, experiment_name=config.EXPERIMENT_NAME, migration_window_days=config.MIGRATION_WINDOW_DAYS)
         logger.info("Запуск UMAP визуализации (включено в конфиге).")
@@ -66,19 +71,12 @@ def main():
     else:
         logger.warning("UMAP визуализация отключена в конфиге (ENABLE_UMAP_GIFS=False). Шаг пропущен.")
 
-    # Шаг 9: Вывод отладочной информации (если включено в конфиге)
+    # Вывод отладочной информации (если включено в конфиге)
     if config.DEBUG:
-        logger.info("--- РЕЖИМ ОТЛАДКИ АКТИВИРОВАН ---")
-        logger.info(f"Форма финального датасета: {processed_spectral_df.shape}")
-        #logger.info(f"Первые 5 строк финального датасета:\n{processed_spectral_df.head().to_string()}")
-        
         with io.StringIO() as buffer:
             processed_spectral_df.info(buf=buffer)
             info_str = buffer.getvalue()
             logger.info(f"\nИнформация о спектральном датасете:\n{info_str}")
-
-        ###logger.info(f"Статистическая сводка по финальному датасету:\n{processed_spectral_df.describe().to_string()}")
-        logger.info("--- КОНЕЦ СЕКЦИИ ОТЛАДКИ ---")
 
         # Дополнительная отладочная информация по модели
         logger.info("--- ОТЛАДКА МОДЕЛИ BASELINE ---")

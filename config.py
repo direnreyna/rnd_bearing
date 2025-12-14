@@ -61,10 +61,19 @@ EXPERIMENT_CHANNELS = {
 }
 
 # СПЕКТРАЛЬНЫЙ АНАЛИЗ
-WINDOW_SIZE = 4096      # Размер окна для FFT
-STEP = 512              # Шаг, с которым двигается окно (создает перекрытие)
-N_PEAKS = 10            # Количество самых сильных частотных пиков для извлечения
-SAMPLING_RATE = 20000   # Частота дискретизации в Гц (из документации)
+WINDOW_SIZE = 4096      #  4096 : Размер окна для FFT
+STEP = 2048             #   512 : Шаг, с которым двигается окно (создает перекрытие)
+N_PEAKS = 40            #    10 : Количество самых сильных частотных пиков для извлечения
+SAMPLING_RATE = 20000   # 20000 : Частота дискретизации в Гц (из документации)
+
+# ТРАНСФОРМАЦИЯ ПРИЗНАКОВ: ЦЕНТРИРОВАНИЕ ПО ЗДОРОВОМУ СОСТОЯНИЮ
+BASELINE_WINDOWS_COUNT = 100 # Количество первых окон для расчета среднего "здорового" значения (Baseline)
+
+# КОНФИГУРАЦИЯ НАБОРОВ ПРИЗНАКОВ (FEATURE SET ABALATION)
+# Включать/выключать наборы: d0 - амплитуды, d1 - скорости, d2 - ускорения
+USE_D0_FEATURES = True # True / False Использовать центрированные амплитуды (d0)
+USE_D1_FEATURES = False # True / False Использовать скорости (d1, 1-я производная)
+USE_D2_FEATURES = False # True / False Использовать ускорения (d2, 2-я производная)
 
 # ЛОГГЕР
 LOG_DIR = ROOT_DIR / 'logs'
@@ -78,7 +87,7 @@ EDA_PLOTS_DIR = ROOT_DIR / 'plots'
 EDA_PLOTS_DIR.mkdir(parents=True, exist_ok=True) # Создаем папку для графиков
 
 # DEBUG-отладка
-DEBUG = True # Включить/выключить вывод детальной информации о датафреймах
+DEBUG = False # Включить/выключить вывод детальной информации о датафреймах
 
 # UMAP визуализация
 UMAP_ANIMATION_FILENAME = f'{EXPERIMENT_NAME}_umap_evolution.gif'
@@ -89,15 +98,20 @@ ENABLE_UMAP_GIFS = False # Если False, то Шаг 8 будет пропущ
 
 # ТЮНИНГ МОДЕЛИ
 ENABLE_MODEL_TUNING = False # Включить/выключить тюнинг (RandomizedSearchCV)
+
+# ОТБОР ПРИЗНАКОВ (FEATURE SELECTION)
+ENABLE_FEATURE_SELECTION = False # Включить/выключить использование только ТОП-N признаков
+N_TOP_FEATURES = 20 # Количество самых важных признаков для использования в обучении
+
 # Параметры для RandomizedSearchCV
 LGBM_TUNING_PARAMS = {
-    'n_estimators': [300, 500, 700],
-    'learning_rate': [0.01, 0.05, 0.1],
+    'n_estimators': [700, 1000, 1500], ## [300, 500, 700] / [700, 1000, 1500]
+    'learning_rate': [0.01, 0.05, 0.1],## [0.01, 0.05, 0.1],
     'num_leaves': [20, 31, 50],
     'max_depth': [-1, 5, 10],
     'min_child_samples': [10, 20, 30]
 }
-N_ITER_SEARCH = 10 # Количество итераций для RandomizedSearchCV
+N_ITER_SEARCH = 20 # Количество итераций для RandomizedSearchCV
 
 # Единица измерения частоты кадров: 'D' - день, 'H' - час, 'T' или 'min' - минута
 ANIMATION_FREQUENCY = 'D'

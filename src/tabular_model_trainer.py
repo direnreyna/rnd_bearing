@@ -8,7 +8,9 @@ import lightgbm as lgb
 
 from typing import Tuple, Dict, Any, Optional
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, r2_score
+import numpy as np
+
 import joblib
 
 import config
@@ -46,7 +48,6 @@ class TabularModelTrainer:
         # 1. Подготовка данных
         X_train, X_test, y_train, y_test = self._prepare_data(df)
 
-
         # 2. Тюнинг гиперпараметров (если включено)
         best_params = {}
         if config.ENABLE_MODEL_TUNING:
@@ -55,16 +56,35 @@ class TabularModelTrainer:
         # 3. Обучение модели
         self.model = self._train_model(X_train, y_train, best_params)
 
-        # 4. Сохранение финальной модели
-        self._save_model()
-
-        # 5. Оценка
-        y_pred, mse = self._evaluate_model(X_test, y_test)
-        self.logger.info(f"Оценка LightGBM на тестовом наборе (MSE): {mse:.4f}")
+        ### # 4. Сохранение финальной модели
+        ### self._save_model()
+        
+        ### # 5. Оценка
+        ### y_pred, mse = self._evaluate_model(X_test, y_test)
+        ### self.logger.info(f"Оценка LightGBM на тестовом наборе (MSE): {mse:.4f}")
 
         # 6. Извлечение важности признаков
         feature_importance = pd.Series(self.model.feature_importances_, index=X_train.columns).sort_values(ascending=False)
         
+        # 7. Применение Feature Selection (если включено)
+        if config.ENABLE_FEATURE_SELECTION:
+            top_features_list = feature_importance.head(config.N_TOP_FEATURES).index.tolist()
+            X_train = X_train[top_features_list]
+            X_test = X_test[top_features_list]
+            self.logger.info(f"Применен Feature Selection. Использовано TOP-{config.N_TOP_FEATURES} признаков. ПЕРЕОБУЧЕНИЕ...")
+            
+            # Переобучаем модель на меньшем наборе признаков
+            self.model = self._train_model(X_train, y_train, best_params)
+            # Пересчитываем важность (хотя она будет та же)
+            feature_importance = pd.Series(self.model.feature_importances_, index=X_train.columns).sort_values(ascending=False)
+        
+        # 8. Сохранение финальной модели
+        self._save_model()
+
+        # 9. Оценка
+        y_pred, rmse = self._evaluate_model(X_test, y_test)
+        self.logger.info(f"Оценка LightGBM на тестовом наборе (RMSE): {rmse:.4f} часов")
+
         return self.model, X_test, y_test, y_pred, feature_importance
     
     def _tune_hyperparameters(self, X_train: pd.DataFrame, y_train: pd.Series, param_grid: Dict[str, Any]) -> Dict[str, Any]: ## ДОБАВЛЕН БЛОК
@@ -110,10 +130,31 @@ class TabularModelTrainer:
         ]
         # Дополнительно удаляем колонки с частотами, т.к. они сложнее для интерпретации LightGBM
         freq_cols = [col for col in df.columns if '_freq' in col]
+
+        # Объединяем все колонки для исключения
+        all_cols_to_exclude = cols_to_drop + freq_cols
+
+        # 1.2: Создание списка колонок, которые МЫ ХОТИМ ИСПОЛЬЗОВАТЬ
+        feature_candidates = [col for col in df.columns if col not in all_cols_to_exclude]
         
-        X = df.drop(columns=cols_to_drop + freq_cols, errors='ignore')
+        final_feature_cols = []
         
-        self.logger.info(f"Количество признаков для обучения: {X.shape[1]}")
+        # Логика Feature Ablation
+        if config.USE_D0_FEATURES:
+            # Centered Amplitudes: (d0) - ищем '_centered'
+            final_feature_cols.extend([col for col in feature_candidates if '_centered' in col])
+        
+        if config.USE_D1_FEATURES:
+            # Velocities: (d1) - ищем '_velo'
+            final_feature_cols.extend([col for col in feature_candidates if '_velo' in col])
+
+        if config.USE_D2_FEATURES:
+            # Accelerations: (d2) - ищем '_accel'
+            final_feature_cols.extend([col for col in feature_candidates if '_accel' in col])
+        
+        X = df[final_feature_cols]
+        
+        self.logger.info(f"Количество признаков для обучения: {X.shape[1]} (d0: {config.USE_D0_FEATURES}, d1: {config.USE_D1_FEATURES}, d2: {config.USE_D2_FEATURES})")
         
         # 2. Разделение на обучающую и тестовую выборки
         # Используем train_test_split. Обычно для RUL лучше делать это по времени,
@@ -172,9 +213,16 @@ class TabularModelTrainer:
         Делает предсказания и оценивает модель.
         """
         y_pred = self.model.predict(X_test)
+        # Рассчитываем MSE и RMSE
         mse = mean_squared_error(y_test, y_pred)
-        
+        rmse = np.sqrt(mse)
+
+        # Рассчитываем R2 для справки
+        r2 = r2_score(y_test, y_pred)
+
+        self.logger.info(f"R2 (Коэффициент детерминации): {r2:.4f}")
+
         # Преобразуем numpy-массив в pandas Series для удобства дальнейшей работы
         y_pred_series = pd.Series(y_pred, index=y_test.index)
 
-        return y_pred_series, mse
+        return y_pred_series, rmse

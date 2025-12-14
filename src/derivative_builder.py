@@ -29,23 +29,29 @@ class DerivativeBuilder:
             pd.DataFrame: Обогащенный DataFrame с производными.
         """
         self.logger.info("Расчет производных (скоростей и ускорений)...")
-        enriched_df = df.copy()
+        ### enriched_df = df.copy()
 
         # Находим все колонки с амплитудами, для которых будем считать производные
         amp_cols = [col for col in df.columns if '_amp' in col]
         if not amp_cols:
             self.logger.warning("Не найдены колонки с амплитудами ('_amp'). Пропускаем расчет производных.")
-            return enriched_df
+            return df
 
         # Группируем по подшипникам, чтобы производные не "перескакивали" между ними
-        grouped = enriched_df.groupby('bearing')
+        grouped = df.groupby('bearing') ## Работаем с исходным DF (df)
+
+        derived_features = {}
 
         for col in amp_cols:
             # Рассчитываем скорость и заполняем NaN нулем
-            enriched_df[f'{col}_velo'] = grouped[col].transform(lambda x: x.diff()).fillna(0)
+            derived_features[f'{col}_velo'] = grouped[col].transform(lambda x: x.diff()).fillna(0)
             
             # Рассчитываем ускорение и заполняем NaN нулем
-            enriched_df[f'{col}_accel'] = grouped[col].transform(lambda x: x.diff().diff()).fillna(0)
+            derived_features[f'{col}_accel'] = grouped[col].transform(lambda x: x.diff().diff()).fillna(0)
+
+        # Однократное объединение всех производных признаков (быстрый способ)
+        derived_df = pd.DataFrame(derived_features, index=df.index) 
+        enriched_df = pd.concat([df, derived_df], axis=1) 
 
         self.logger.info(f"Успешно добавлено {len(amp_cols) * 2} колонок с производными.")
         return enriched_df
