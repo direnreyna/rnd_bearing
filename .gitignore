@@ -9,10 +9,12 @@ __pycache__/
 venv_bearing/
 .venv/
 
+
 # 3. Данные проекта
 # Игнорируем большие файлы данных и кэш
 data/*.parquet
 data/*.joblib
+catboost_info/*
 
 # 4. Графики и картинки
 plots/*.gif

@@ -1,6 +1,5 @@
 # src/model_evaluator.py
 
-
 import logging
 import pathlib
 from typing import Tuple
@@ -31,7 +30,7 @@ class ModelEvaluator:
         Главный метод. Запускает визуализацию сравнения RUL.
 
         Args:
-            X_test (pd.DataFrame): Тестовые признаки (нужны для мета-данных).
+            X_test (pd.DataFrame): Тестовые признаки (теперь содержит мета-данные).
             y_test (pd.Series): Реальные значения RUL.
             y_pred (pd.Series): Предсказанные значения RUL.
             feature_importance (pd.Series): Важность признаков от модели.
@@ -58,10 +57,12 @@ class ModelEvaluator:
         # Мы должны были передать их из main.py, но чтобы не ломать архитектуру,
         # примем, что нам достаточно сравнить RUL без временной оси (пока).
 
-        self.logger.warning("Для построения графика RUL во времени, необходимо, чтобы 'timestamp' был в X_test. Строим график только 'Предсказанный vs. Реальный' (2D Scatter Plot).")
+        evaluation_df = pd.merge(evaluation_df, X_test[['timestamp', 'bearing']], left_index=True, right_index=True, how='left')
+        self.logger.info("График RUL будет построен по оси времени (timestamp) с разбивкой по подшипникам.")
 
         self._plot_scatter_comparison(evaluation_df)
-        self._plot_rul_trend(evaluation_df, y_test.index) # Построение по индексу (последовательности)
+        self._plot_rul_trend(evaluation_df) ## ИЗМЕНЕНО: убран аргумент original_index
+        ### self._plot_rul_trend(evaluation_df, y_test.index) # Построение по индексу (последовательности)
         self._plot_feature_importance(feature_importance)
 
         self.logger.info("Визуализация оценки модели завершена.")
@@ -98,24 +99,32 @@ class ModelEvaluator:
         plt.close()
         self.logger.info(f"График сравнения RUL сохранен: {save_path}")
         
-    def _plot_rul_trend(self, df: pd.DataFrame, original_index: pd.Index):
+    def _plot_rul_trend(self, df: pd.DataFrame):
         """
-        Строит график RUL в зависимости от последовательности образцов.
+        Строит график RUL в зависимости от времени, с разбивкой по подшипникам.
         """
-        df_plot = df.reset_index(drop=True)
-        df_plot['Sample_Index'] = df_plot.index
+        self.logger.info("Создание графика RUL во времени (по подшипникам)...")
+
+        df = df.sort_values(by='timestamp')
         
         plt.figure(figsize=(15, 6))
         
         # Использование rolling mean для сглаживания предсказаний
         window = 50
-        plt.plot(df_plot['Sample_Index'], df_plot['RUL_Actual'].rolling(window=window).mean(), 
-                 label='Фактический RUL (Сглаженный)', color='blue')
-        plt.plot(df_plot['Sample_Index'], df_plot['RUL_Predicted'].rolling(window=window).mean(), 
-                 label='Предсказанный RUL (Сглаженный)', color='red', linestyle='--')
         
+        for bearing in df['bearing'].unique(): ## Итерация по подшипникам
+            df_bearing = df[df['bearing'] == bearing]
+            
+            # Фактический RUL (не сглаживается, так как по времени он уже "гладкий")
+            plt.plot(df_bearing['timestamp'], df_bearing['RUL_Actual'], 
+                     label=f'Фактический RUL ({bearing})', color='blue', alpha=0.5)
+
+            # Предсказанный RUL (сглаживание)
+            plt.plot(df_bearing['timestamp'], df_bearing['RUL_Predicted'].rolling(window=window).mean(), 
+                     label=f'Предсказанный RUL ({bearing}) (Сглаженный: {window})', color='red', linestyle='--')
+
         plt.title(f'Эволюция RUL: Фактический vs. Предсказанный (Сглаживание: Окно={window})')
-        plt.xlabel('Индекс образца (в тестовом наборе)')
+        plt.xlabel('Дата и время')
         plt.ylabel('RUL (часы)')
         plt.legend()
         plt.grid(True)
@@ -126,7 +135,7 @@ class ModelEvaluator:
         plt.close()
         self.logger.info(f"График эволюции RUL сохранен: {save_path}")
 
-    def _plot_feature_importance(self, feature_importance: pd.Series, top_n: int = 20): ## ДОБАВЛЕН БЛОК
+    def _plot_feature_importance(self, feature_importance: pd.Series, top_n: int = 20):
         """
         Строит график важности признаков (Feature Importance) для LightGBM.
         """

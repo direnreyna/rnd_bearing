@@ -14,3 +14,4 @@ lightgbm
 mlflow
 optuna
 optuna-integration
+catboost

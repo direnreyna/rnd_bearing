@@ -3,6 +3,7 @@
 import io
 import pandas as pd
 
+import joblib
 import mlflow
 import config
 from src.dataset_builder import DatasetBuilder
@@ -56,17 +57,55 @@ def main():
     transformed_df = baseline_transformer.run(spectral_df)
 
     # Создание целевой переменной (RUL)
-    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger, rul_min_threshold_hours=config.RUL_MIN_THRESHOLD_HOURS)
+    rul_builder = RULBuilder(experiment_name=config.EXPERIMENT_NAME, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger, rul_min_threshold_hours=config.RUL_MIN_THRESHOLD_HOURS, target_failure_bearing_index=config.TARGET_FAILURE_BEARING_INDEX, nominal_window_interval_minutes=config.NOMINAL_WINDOW_INTERVAL_MINUTES)
     processed_spectral_df = rul_builder.run(transformed_df)
 
     # Создание и обучение базовой модели (Baseline)
     trainer = TabularModelTrainer(logger=logger, experiment_name=config.EXPERIMENT_NAME)
     # Возвращаем все результаты для визуализации оценки
-    model, X_test, y_test, y_pred, feature_importance = trainer.run(processed_spectral_df)
+    model, X_test_meta, y_test_train, y_pred_train, feature_importance = trainer.run(processed_spectral_df)
 
     # Оценка и визуализация результатов модели
     evaluator = ModelEvaluator(plots_dir=config.EDA_PLOTS_DIR, logger=logger)
-    evaluator.run(X_test, y_test, y_pred, feature_importance)
+    evaluator.run(X_test_meta, y_test_train, y_pred_train, feature_importance)
+
+    # СЕКЦИЯ: Перекрестный эксперимент проверки модели на одних данных обученной на других данных
+    if config.ENABLE_CROSS_EXPERIMENT_PREDICTION:
+        logger.info(f"Запуск Cross-Experiment Prediction: Тестирование {config.EXPERIMENT_NAME} на {config.TARGET_TEST_EXPERIMENT_NAME}")
+        
+        # 1. Формируем пути для целевого эксперимента
+        test_exp_name = config.TARGET_TEST_EXPERIMENT_NAME
+        raw_test_dir = config.RAW_DATA_SOURCE_DIR / test_exp_name
+        spectral_test_filepath = config.PROCESSED_DATA_DIR / f'{test_exp_name}_spectral_features.parquet'
+        
+        # 2. Повторяем Feature Engineering и RUL-расчет для тестового эксперимента
+        spectral_analyzer_test = SpectralAnalyzer(raw_data_path=raw_test_dir, spectral_filepath=spectral_test_filepath, logger=logger, config=config, window_size=config.WINDOW_SIZE, step=config.STEP, n_peaks=config.N_PEAKS, sampling_rate=config.SAMPLING_RATE)
+        spectral_df_test = spectral_analyzer_test.run()
+
+        baseline_transformer_test = BaselineTransformer(logger=logger, baseline_windows_count=config.BASELINE_WINDOWS_COUNT)
+        transformed_df_test = baseline_transformer_test.run(spectral_df_test)
+
+        rul_builder_test = RULBuilder(experiment_name=test_exp_name, failure_map=config.FAILURE_BEARINGS_MAP, logger=logger, rul_min_threshold_hours=0, target_failure_bearing_index=config.TARGET_FAILURE_BEARING_INDEX, nominal_window_interval_minutes=config.NOMINAL_WINDOW_INTERVAL_MINUTES)
+        processed_spectral_df_test = rul_builder_test.run(transformed_df_test)
+        
+        # 3. Подготовка тестовых данных (X, y)
+        X_test_meta_pred, y_test_pred = trainer._prepare_predict_data(processed_spectral_df_test) 
+        
+        # 4. Предсказание и оценка
+        X_test_model_pred = X_test_meta_pred.drop(columns=['timestamp', 'bearing'])
+        
+        if X_test_model_pred.shape[0] > 0:
+            # Загружаем модель (хотя в памяти уже есть, но для Production-имитации)
+            model_pred = joblib.load(config.MODEL_FILEPATH)
+            
+            y_pred_test = model_pred.predict(X_test_model_pred)
+            y_pred_series_test = pd.Series(y_pred_test, index=y_test_pred.index) # Удален dtype='float64'
+            
+            # Логгирование метрик и визуализация
+            evaluator.run(X_test_meta_pred, y_test_pred, y_pred_series_test, feature_importance)
+            logger.info(f"Cross-Experiment Prediction завершен. Результаты сохранены.")
+        else:
+            logger.warning("Тестовый датасет для предсказания пуст после фильтрации. Шаг пропущен.")
 
     # Предобработка спектральных данных и UMAP визуализация
     if config.ENABLE_UMAP_GIFS: 

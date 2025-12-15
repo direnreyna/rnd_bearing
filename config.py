@@ -17,6 +17,9 @@ EXPERIMENT_NAME = '1st_test' ## '1st_test' / '2nd_test' / '3rd_test'
 # Полный путь к данным для текущего эксперимента
 RAW_EXPERIMENT_DIR = RAW_DATA_SOURCE_DIR / EXPERIMENT_NAME
 
+# ТЮНИНГ МОДЕЛИ
+ENABLE_MODEL_TUNING = True # Включить/выключить тюнинг (Optuna)
+
 # ИМЕНА ФАЙЛОВ
 # Имя файла для сохранения обработанного датафрейма
 PROCESSED_DATA_FILENAME = f'{EXPERIMENT_NAME}_features.parquet'
@@ -34,12 +37,14 @@ SPECTRAL_FEATURES_FILEPATH = PROCESSED_DATA_DIR / SPECTRAL_FEATURES_FILENAME
 MODEL_FILENAME = f'{EXPERIMENT_NAME}_lgbm_rul_model.joblib'
 MODEL_FILEPATH = PROCESSED_DATA_DIR / MODEL_FILENAME
 
+# КОНФИГУРАЦИЯ МОДЕЛИ
+MODEL_TYPE = 'CATB' # Выбор модели: 'LGBM' или 'CATB'
 
 # ПУТЬ ДЛЯ MLFLOW
 MLFLOW_URI = pathlib.Path('/media/Cruiser/rnd_data/mlruns')
 MLFLOW_URI.mkdir(parents=True, exist_ok=True)
 MLFLOW_TRACKING_URI = f"file:///{MLFLOW_URI.resolve()}"
-MLFLOW_EXPERIMENT_NAME = f"RUL_Optimization_{EXPERIMENT_NAME}"
+MLFLOW_EXPERIMENT_NAME = f"RUL_Optimization_{EXPERIMENT_NAME}_{MODEL_TYPE}"
 ENABLE_MLFLOW_TRACKING = True # Включить/выключить логирование в MLflow
 
 # ФОРМАТ ВРЕМЕННОЙ МЕТКИ (для парсинга из имени файла)
@@ -77,9 +82,15 @@ SAMPLING_RATE = 20000   # 20000 : Частота дискретизации в �
 # ТРАНСФОРМАЦИЯ ПРИЗНАКОВ: ЦЕНТРИРОВАНИЕ ПО ЗДОРОВОМУ СОСТОЯНИЮ
 BASELINE_WINDOWS_COUNT = 100 # Количество первых окон для расчета среднего "здорового" значения (Baseline)
 
+# ВРЕМЯ МЕЖДУ СБОРОМ ДАННЫХ (для расчета RUL в часах по циклам)
+NOMINAL_WINDOW_INTERVAL_MINUTES = 10 # 10 минут (согласно документации/наблюдениям)
+
+# ВЫБОР ЦЕЛЕВОГО ПОДШИПНИКА ИЗ СПИСКА: используется, если в FAILURE_BEARINGS_MAP несколько подшипников
+TARGET_FAILURE_BEARING_INDEX = 0 # Индекс подшипника в списке FAILURE_BEARINGS_MAP (например, 0 для 'bearing_3', 1 для 'bearing_4' в 1st_test)
+
 # RUL/T-MIN ПОРОГ (Используется для удаления "слишком здоровых" данных)
 # Если RUL > RUL_MIN_THRESHOLD_HOURS, то строка удаляется из обучающей выборки.
-RUL_MIN_THRESHOLD_HOURS = 400 # Часы. Например, 400 часов. 0 = отключено
+RUL_MIN_THRESHOLD_HOURS = 50 # Часы. Например, 400 часов. 0 = отключено
 
 # КОНФИГУРАЦИЯ НАБОРОВ ПРИЗНАКОВ (FEATURE SET ABALATION)
 # Включать/выключать наборы: d0 - амплитуды, d1 - скорости, d2 - ускорения
@@ -108,40 +119,36 @@ UMAP_SAMPLE_FRACTION = 1.0 # Какую долю последних данных
 # УПРАВЛЕНИЕ АНИМАЦИЕЙ (отключение создания)
 ENABLE_UMAP_GIFS = False # Если False, то Шаг 8 будет пропущен (экономия времени).
 
-# ТЮНИНГ МОДЕЛИ
-ENABLE_MODEL_TUNING = True # Включить/выключить тюнинг (Optuna)
-
 # ОТБОР ПРИЗНАКОВ (FEATURE SELECTION)
 ENABLE_FEATURE_SELECTION = False # Включить/выключить использование только ТОП-N признаков
-N_TOP_FEATURES = 20 # Количество самых важных признаков для использования в обучении
+N_TOP_FEATURES = 10 # Количество самых важных признаков для использования в обучении
 
 # Параметры для Optuna (LightGBM Search Space - будет использоваться в TabularModelTrainer)
 LGBM_OPTUNA_PARAMS = {
-    'n_estimators': (500, 2000), # min_value, max_value (int)
-    'learning_rate': (0.01, 0.2, 'log'), # low, high, distribution (log-uniform)
-    'num_leaves': (10, 100), # low, high (int)
-    'max_depth': (3, 15), # low, high (int)
-    'min_child_samples': (5, 50), # low, high (int)
+    'n_estimators': (50, 2000), # min_value, max_value (int)
+    'learning_rate': (0.001, 0.2, 'log'), # low, high, distribution (log-uniform)
+    'num_leaves': (2, 200), # low, high (int)
+    'max_depth': (3, 50), # low, high (int)
+    'min_child_samples': (2, 100), # low, high (int)
     'reg_alpha': (0.0, 1.0, 'uniform'), # L1 regularization
     'reg_lambda': (0.0, 1.0, 'uniform'), # L2 regularization
 }
 
-### # Параметры для RandomizedSearchCV
-### LGBM_TUNING_PARAMS = {
-###     'n_estimators': [700, 1000, 1500], ## [300, 500, 700] / [700, 1000, 1500]
-###     'learning_rate': [0.01, 0.05, 0.1],## [0.01, 0.05, 0.1],
-###     'num_leaves': [20, 31, 50],
-###     'max_depth': [-1, 5, 10],
-###     'min_child_samples': [10, 20, 30]
-### }
-### N_ITER_SEARCH = 20 # Количество итераций для RandomizedSearchCV
+# Параметры для Optuna (CatBoost Search Space)
+CATB_TUNING_PARAMS = {
+    'iterations': (100, 2000), 
+    'learning_rate': (0.001, 0.2, 'log'),
+    'depth': (4, 10),
+    'l2_leaf_reg': (1, 10),
+    'border_count': (32, 255)
+}
 
 # Параметры для Optuna
-OPTUNA_N_TRIALS = 50 # Количество пробных запусков (итераций) Optuna
+OPTUNA_N_TRIALS = 100 # Количество пробных запусков (итераций) Optuna
 OPTUNA_TIMEOUT = 3600 # Максимальное время работы Optuna в секундах (1 час)
 
 # URI для постоянного хранения результатов Optuna (используем тот же SSD)
-OPTUNA_STORAGE_URI = f"sqlite:///{MLFLOW_URI.parent.resolve() / 'optuna_study.db'}"
+OPTUNA_STORAGE_URI = f"sqlite:///{MLFLOW_URI.parent.resolve() / f'optuna_study_{MODEL_TYPE}.db'}"
 
 # Единица измерения частоты кадров: 'D' - день, 'H' - час, 'T' или 'min' - минута
 ANIMATION_FREQUENCY = 'D'
@@ -156,3 +163,7 @@ FAILURE_BEARINGS_MAP = {
 # 'H' и 6 = 1 кадр каждые 6 часов. 'T' и 10 = 1 кадр каждые 10 минут.
 ANIMATION_INTERVAL = 1
 MIGRATION_WINDOW_DAYS = 3 # Длина "шлейфа" в днях для миграционной гифки
+
+# КОНФИГУРАЦИЯ TRANSFER LEARNING / CROSS-EXPERIMENT PREDICTION
+ENABLE_CROSS_EXPERIMENT_PREDICTION = False # False / True = Пайплайн обучится на EXPERIMENT_NAME и протестирует на TARGET_TEST_EXPERIMENT_NAME
+TARGET_TEST_EXPERIMENT_NAME = '2nd_test' # Имя эксперимента для тестирования (если флаг выше = True)
