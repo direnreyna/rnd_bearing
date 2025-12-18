@@ -175,7 +175,7 @@ def main():
                 batch_size=config.DL_BATCH_SIZE
             )
 
-            model = dl_trainer.run(X_train_3D, y_train_seq, X_val_3D, y_val_seq)
+            model, history = dl_trainer.run(X_train_3D, y_train_seq, X_val_3D, y_val_seq)
 
             # 4. Оценка и визуализация (Нужно адаптировать Evaluator для DL)
             # Выходы DL-моделей - это чистые массивы numpy
@@ -185,7 +185,7 @@ def main():
             feature_importance = pd.Series(data=[1.0], index=['DL_MODEL'], dtype='float64')
 
             logger.warning("DL-ОЦЕНКА: Требуется дальнейшая адаптация Evaluator для 3D-данных.")
-            evaluator.run(X_test_meta_dl, pd.Series(y_test_seq, index=X_test_meta_dl.index), pd.Series(y_pred, index=X_test_meta_dl.index), feature_importance)
+            evaluator.run(X_test_meta_dl, pd.Series(y_test_seq, index=X_test_meta_dl.index), pd.Series(y_pred, index=X_test_meta_dl.index), feature_importance, dl_history=history)
 
         #=========================================================
         elif current_mode == "finetune":
@@ -211,7 +211,7 @@ def main():
                 batch_size=config.DL_BATCH_SIZE
             )
             
-            model = dl_trainer.finetune(current_mode, X_train_3D, y_train_seq, X_val_3D, y_val_seq, X_test_3D, y_test_seq, X_test_meta_dl)
+            model, history = dl_trainer.finetune(current_mode, X_train_3D, y_train_seq, X_val_3D, y_val_seq, X_test_3D, y_test_seq, X_test_meta_dl)
 
             # 4. Оценка и визуализация (также, как после полного обучения)
             y_pred = dl_trainer.predict(X_test_3D)
@@ -219,7 +219,7 @@ def main():
             feature_importance = pd.Series(data=[1.0], index=['DL_MODEL'], dtype='float64')
             
             logger.warning("DL-ОЦЕНКА: Требуется дальнейшая адаптация Evaluator для 3D-данных.")
-            evaluator.run(X_test_meta_dl, pd.Series(y_test_seq, index=X_test_meta_dl.index), pd.Series(y_pred, index=X_test_meta_dl.index), feature_importance)
+            evaluator.run(X_test_meta_dl, pd.Series(y_test_seq, index=X_test_meta_dl.index), pd.Series(y_pred, index=X_test_meta_dl.index), feature_importance, dl_history=history)
 
         #=========================================================
         elif current_mode == "inference":

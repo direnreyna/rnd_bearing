@@ -7,6 +7,7 @@ import numpy as np
 from typing import Dict, Any, Tuple
 import mlflow
 
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.models import load_model
@@ -39,13 +40,13 @@ class DLModelTrainer:
         # 1. Запуск Optuna Tuning
         best_params = self._tune_hyperparameters(X_train, y_train, X_val, y_val)
         
-        # 2. Финальное обучение лучшей модели
-        self.best_model = self._train_model(X_train, y_train, X_val, y_val, best_params)
-        
+        # 2. Обучение лучшей модели выбранной Optuna-поиском
+        model, history = self._train_model(X_train, y_train, X_val, y_val, best_params)
+
         # 3. Сохранение модели и весов
-        self._save_model(self.best_model)
+        self._save_model(model)
         
-        return self.best_model
+        return model, history
 
     def finetune(self, mode: str, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, X_test: np.ndarray, y_test: np.ndarray, X_test_meta: pd.DataFrame) -> Model:
         """
@@ -86,9 +87,9 @@ class DLModelTrainer:
         early_stop = EarlyStopping(monitor='loss', patience=config.DL_EARLY_STOPPING_PATIENCE, verbose=1, mode='min')
         
         self.logger.info("Запуск дообучения...")
-        self.best_model.fit(
+        history = self.best_model.fit(
             X_train_full, y_train_full,
-            epochs=self.epochs, # Используем максимальное количество эпох из конфига
+            epochs=self.epochs,
             batch_size=self.batch_size,
             callbacks=[early_stop],
             verbose=1
@@ -98,8 +99,11 @@ class DLModelTrainer:
         # 5. Сохранение дообученной модели
         self._save_model(self.best_model)
         
-        return self.best_model
-
+        # 6. Оценка на тестовом наборе
+        self._evaluate_on_test_set(self.best_model, X_test, y_test)
+        
+        return self.best_model, history
+    
     def run_inference_mode(self, mode: str, X_test_3D: np.ndarray, X_shape_for_arch: Tuple[int, int]) -> np.ndarray:
         """
         Метод для выполнения инференса (предсказаний) на DL-модели.
@@ -190,7 +194,7 @@ class DLModelTrainer:
         
         return study.best_params
 
-    def _train_model(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, best_params: Dict[str, Any]) -> Model:
+    def _train_model(self, X_train: np.ndarray, y_train: np.ndarray, X_val: np.ndarray, y_val: np.ndarray, best_params: Dict[str, Any]) -> Tuple[Model, Any]:
         """
         Финальное обучение лучшей модели на полном наборе Train+Val.
         """
@@ -218,7 +222,7 @@ class DLModelTrainer:
         
         early_stop = EarlyStopping(monitor='loss', patience=config.DL_EARLY_STOPPING_PATIENCE, verbose=1, mode='min')
 
-        model.fit(
+        history = model.fit(
             X_train_full, y_train_full,
             epochs=self.epochs,
             batch_size=self.batch_size,
@@ -227,8 +231,22 @@ class DLModelTrainer:
         )
         
         self.logger.info("DL Финальное обучение завершено.")
-        return model
+        return model, history
 
+    def _evaluate_on_test_set(self, model: Model, X_test: np.ndarray, y_test: np.ndarray):
+        """
+        Делает предсказание и выводит финальные метрики на тестовом наборе.
+        """
+        y_pred = model.predict(X_test, verbose=0).flatten()
+        
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        mae = mean_absolute_error(y_test, y_pred)
+        
+        self.logger.info("--- ФИНАЛЬНАЯ ОЦЕНКА DL-МОДЕЛИ НА ТЕСТОВОМ НАБОРЕ ---")
+        self.logger.info(f"Test RMSE: {rmse:.4f} часов")
+        self.logger.info(f"Test MAE: {mae:.4f} часов")
+        self.logger.info("-------------------------------------------------------")
+    
     def _get_model_paths(self) -> Dict[str, pathlib.Path]:
         """
         Формирует пути для сохранения модели и весов на основе конфигурации.

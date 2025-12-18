@@ -2,8 +2,8 @@
 
 import logging
 import pathlib
-from typing import Tuple
 
+from typing import Tuple, Any
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -27,7 +27,7 @@ class ModelEvaluator:
         self.model_type = model_type
         sns.set(style="whitegrid")
 
-    def run(self, X_test: pd.DataFrame, y_test: pd.Series, y_pred: pd.Series, feature_importance: pd.Series):
+    def run(self, X_test: pd.DataFrame, y_test: pd.Series, y_pred: pd.Series, feature_importance: pd.Series, dl_history: Any = None):
         """
         Главный метод. Запускает визуализацию сравнения RUL.
 
@@ -36,6 +36,7 @@ class ModelEvaluator:
             y_test (pd.Series): Реальные значения RUL.
             y_pred (pd.Series): Предсказанные значения RUL.
             feature_importance (pd.Series): Важность признаков от модели.
+            dl_history (Any): Объект history Keras для DL-моделей.
         """
         self.logger.info("Запуск оценки и визуализации результатов модели.")
         
@@ -44,20 +45,6 @@ class ModelEvaluator:
             'RUL_Actual': y_test,
             'RUL_Predicted': y_pred
         })
-        
-        # Добавляем мета-данные обратно
-        # Поскольку y_test.index совпадает с индексом X_test, используем его.
-        # В X_test не попали 'timestamp' и 'bearing', но они были в исходном processed_spectral_df.
-        # Однако, мы можем извлечь их из индексов, если они были сохранены (на данный момент они не были).
-        
-        # АЛЬТЕРНАТИВНЫЙ ПОДХОД: Слияние по индексу (это самое надежное)
-        
-        # 1. Извлекаем нужные мета-колонки (timestamp и bearing) из исходного датафрейма.
-        # Внимание: X_test.index - это исходный индекс, используем его для извлечения.
-        
-        # ВАЖНО: Текущий X_test НЕ содержит 'timestamp' и 'bearing', так как они были удалены в _prepare_data.
-        # Мы должны были передать их из main.py, но чтобы не ломать архитектуру,
-        # примем, что нам достаточно сравнить RUL без временной оси (пока).
 
         evaluation_df = pd.merge(evaluation_df, X_test[['timestamp', 'bearing']], left_index=True, right_index=True, how='left')
         self.logger.info("График RUL будет построен по оси времени (timestamp) с разбивкой по подшипникам.")
@@ -68,9 +55,12 @@ class ModelEvaluator:
         self.logger.debug(f"DEBUG: evaluation_df.dtypes before plotting:\n{evaluation_df.dtypes}")
         
         self._plot_scatter_comparison(evaluation_df)
-        self._plot_rul_trend(evaluation_df) ## ИЗМЕНЕНО: убран аргумент original_index
-        ### self._plot_rul_trend(evaluation_df, y_test.index) # Построение по индексу (последовательности)
-        self._plot_feature_importance(feature_importance)
+        self._plot_rul_trend(evaluation_df)
+        
+        if self.model_type != 'DL':
+            self._plot_feature_importance(feature_importance)
+        if self.model_type == 'DL' and dl_history is not None:
+            self._plot_training_history(dl_history)
 
         self.logger.info("Визуализация оценки модели завершена.")
 
@@ -152,6 +142,48 @@ class ModelEvaluator:
         plt.savefig(save_path)
         plt.close()
         self.logger.info(f"График эволюции RUL сохранен: {save_path}")
+
+    def _plot_training_history(self, history: Any):
+        """
+        Строит графики Loss и MAE по эпохам для DL-моделей.
+        """
+        self.logger.info("Создание графиков истории обучения (Loss/MAE)...")
+
+        history_df = pd.DataFrame(history.history)
+        
+        # График Loss
+        plt.figure(figsize=(12, 5))
+        plt.plot(history_df['loss'], label='Train Loss')
+        if 'val_loss' in history_df.columns:
+            plt.plot(history_df['val_loss'], label='Validation Loss')
+        
+        plt.title(f'История обучения: Loss ({self.model_type})', fontsize=16)
+        plt.xlabel('Эпоха', fontsize=12)
+        plt.ylabel('Loss (MSE)', fontsize=12)
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        save_path_loss = self.plots_dir / f'{self.model_type}_training_loss_history.png'
+        plt.savefig(save_path_loss)
+        plt.close()
+        self.logger.info(f"График истории Loss сохранен: {save_path_loss}")
+
+        # График MAE
+        plt.figure(figsize=(12, 5))
+        plt.plot(history_df['mae'], label='Train MAE')
+        if 'val_mae' in history_df.columns:
+            plt.plot(history_df['val_mae'], label='Validation MAE')
+            
+        plt.title(f'История обучения: MAE ({self.model_type})', fontsize=16)
+        plt.xlabel('Эпоха', fontsize=12)
+        plt.ylabel('MAE (часы)', fontsize=12)
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        save_path_mae = self.plots_dir / f'{self.model_type}_training_mae_history.png'
+        plt.savefig(save_path_mae)
+        plt.close()
+        self.logger.info(f"График истории MAE сохранен: {save_path_mae}")
 
     def _plot_feature_importance(self, feature_importance: pd.Series, top_n: int = 20):
         """
