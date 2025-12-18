@@ -13,16 +13,18 @@ class ModelEvaluator:
     Класс для оценки и визуализации результатов предсказательной модели RUL.
     """
 
-    def __init__(self, plots_dir: pathlib.Path, logger: logging.Logger):
+    def __init__(self, plots_dir: pathlib.Path, logger: logging.Logger, model_type: str):
         """
         Инициализирует оценщика.
 
         Args:
             plots_dir (pathlib.Path): Папка для сохранения графиков.
             logger (logging.Logger): Экземпляр логгера.
+            model_type (str): Тип используемой модели (DL, LGBM, CATB) для формирования имен файлов.
         """
         self.plots_dir = plots_dir
         self.logger = logger
+        self.model_type = model_type
         sns.set(style="whitegrid")
 
     def run(self, X_test: pd.DataFrame, y_test: pd.Series, y_pred: pd.Series, feature_importance: pd.Series):
@@ -60,6 +62,11 @@ class ModelEvaluator:
         evaluation_df = pd.merge(evaluation_df, X_test[['timestamp', 'bearing']], left_index=True, right_index=True, how='left')
         self.logger.info("График RUL будет построен по оси времени (timestamp) с разбивкой по подшипникам.")
 
+        # Отладочный вывод для проверки данных перед графиком
+        self.logger.debug(f"DEBUG: evaluation_df.head() before plotting:\n{evaluation_df.head()}")
+        self.logger.debug(f"DEBUG: evaluation_df.tail() before plotting:\n{evaluation_df.tail()}")
+        self.logger.debug(f"DEBUG: evaluation_df.dtypes before plotting:\n{evaluation_df.dtypes}")
+        
         self._plot_scatter_comparison(evaluation_df)
         self._plot_rul_trend(evaluation_df) ## ИЗМЕНЕНО: убран аргумент original_index
         ### self._plot_rul_trend(evaluation_df, y_test.index) # Построение по индексу (последовательности)
@@ -87,14 +94,14 @@ class ModelEvaluator:
         max_rul = df['RUL_Actual'].max()
         plt.plot([0, max_rul], [0, max_rul], 'r--', label='Идеальное предсказание')
         
-        plt.title('Сравнение фактического RUL с предсказанным (Baseline)')
+        plt.title(f'Сравнение фактического RUL с предсказанным ({self.model_type})')
         plt.xlabel('Фактический RUL (часы)')
         plt.ylabel('Предсказанный RUL (часы)')
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
         
-        save_path = self.plots_dir / 'rul_scatter_comparison.png'
+        save_path = self.plots_dir / f'{self.model_type}_rul_scatter_comparison.png'
         plt.savefig(save_path)
         plt.close()
         self.logger.info(f"График сравнения RUL сохранен: {save_path}")
@@ -106,7 +113,17 @@ class ModelEvaluator:
         self.logger.info("Создание графика RUL во времени (по подшипникам)...")
 
         df = df.sort_values(by='timestamp')
-        
+
+        # Отладочный вывод для проверки данных, используемых для графика RUL-тренда
+        for bearing in df['bearing'].unique():
+            df_bearing = df[df['bearing'] == bearing]
+            self.logger.debug(f"DEBUG: Data for RUL Trend Plot - Bearing: {bearing}")
+            self.logger.debug(f"DEBUG: df_bearing.head() for RUL Trend:\n{df_bearing[['timestamp', 'RUL_Actual', 'RUL_Predicted']].head()}")
+            self.logger.debug(f"DEBUG: df_bearing.tail() for RUL Trend:\n{df_bearing[['timestamp', 'RUL_Actual', 'RUL_Predicted']].tail()}")
+            self.logger.debug(f"DEBUG: Min/Max Timestamp for {bearing}: {df_bearing['timestamp'].min()} / {df_bearing['timestamp'].max()}")
+            self.logger.debug(f"DEBUG: Min/Max RUL_Actual for {bearing}: {df_bearing['RUL_Actual'].min()} / {df_bearing['RUL_Actual'].max()}")
+            self.logger.debug(f"DEBUG: Min/Max RUL_Predicted for {bearing}: {df_bearing['RUL_Predicted'].min()} / {df_bearing['RUL_Predicted'].max()}")
+
         plt.figure(figsize=(15, 6))
         
         # Использование rolling mean для сглаживания предсказаний
@@ -123,14 +140,15 @@ class ModelEvaluator:
             plt.plot(df_bearing['timestamp'], df_bearing['RUL_Predicted'].rolling(window=window).mean(), 
                      label=f'Предсказанный RUL ({bearing}) (Сглаженный: {window})', color='red', linestyle='--')
 
-        plt.title(f'Эволюция RUL: Фактический vs. Предсказанный (Сглаживание: Окно={window})')
+
+        plt.title(f'Эволюция RUL: Фактический vs. Предсказанный ({self.model_type}) (Сглаживание: Окно={window})')
         plt.xlabel('Дата и время')
         plt.ylabel('RUL (часы)')
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
         
-        save_path = self.plots_dir / 'rul_trend_comparison.png'
+        save_path = self.plots_dir / f'{self.model_type}_rul_trend_comparison.png'
         plt.savefig(save_path)
         plt.close()
         self.logger.info(f"График эволюции RUL сохранен: {save_path}")
@@ -147,12 +165,13 @@ class ModelEvaluator:
         plt.figure(figsize=(10, 0.5 * top_n)) # Динамический размер графика
         sns.barplot(x=top_features.values, y=top_features.index, palette="viridis")
         
-        plt.title(f'ТОП-{top_n} самых важных признаков для предсказания RUL (LightGBM)', fontsize=14)
+        plt.title(f'ТОП-{top_n} самых важных признаков для предсказания RUL ({self.model_type})', fontsize=14)
         plt.xlabel('Важность признака (Gain/Split)', fontsize=12)
         plt.ylabel('Признак', fontsize=12)
         plt.tight_layout()
         
-        save_path = self.plots_dir / 'feature_importance_top20.png'
+
+        save_path = self.plots_dir / f'{self.model_type}_feature_importance_top20.png'
         plt.savefig(save_path)
         plt.close()
         self.logger.info(f"График важности признаков сохранен: {save_path}")

@@ -38,7 +38,11 @@ MODEL_FILENAME = f'{EXPERIMENT_NAME}_lgbm_rul_model.joblib'
 MODEL_FILEPATH = PROCESSED_DATA_DIR / MODEL_FILENAME
 
 # КОНФИГУРАЦИЯ МОДЕЛИ
-MODEL_TYPE = 'CATB' # Выбор модели: 'LGBM' или 'CATB'
+MODEL_TYPE = 'DL' # Выбор модели: 'DL', 'LGBM' или 'CATB'
+
+# ОБЩАЯ ПАПКА ДЛЯ СОХРАНЕНИЯ DL МОДЕЛЕЙ И ВЕСОВ
+DL_MODEL_DIR = PROCESSED_DATA_DIR / 'dl_models'
+DL_MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 # ПУТЬ ДЛЯ MLFLOW
 MLFLOW_URI = pathlib.Path('/media/Cruiser/rnd_data/mlruns')
@@ -74,10 +78,18 @@ EXPERIMENT_CHANNELS = {
 }
 
 # СПЕКТРАЛЬНЫЙ АНАЛИЗ
-WINDOW_SIZE = 4096      #  4096 : Размер окна для FFT
-STEP = 2048             #   512 : Шаг, с которым двигается окно (создает перекрытие)
-N_PEAKS = 40            #    10 : Количество самых сильных частотных пиков для извлечения
-SAMPLING_RATE = 20000   # 20000 : Частота дискретизации в Гц (из документации)
+WINDOW_SIZE = 512     # 4096   #  4096 : Размер окна для FFT
+STEP = 128            # 2048   #   512 : Шаг, с которым двигается окно (создает перекрытие)
+N_PEAKS = 10           # 40     #    10 : Количество самых сильных частотных пиков для извлечения
+SAMPLING_RATE = 20000  # 20000  # 20000 : Частота дискретизации в Гц (из документации)
+
+# КОНФИГУРАЦИЯ DEEP LEARNING (DL)
+DL_SEQUENCE_LENGTH = 50             # 10 образцов (соответствует фичам из одного файла, ~1 секунда записи)
+DL_BATCH_SIZE = 32                  # Размер батча для обучения DL
+DL_EPOCHS = 2000                    # Количество эпох для DL
+DL_LSTM_UNITS = 256                  # Количество юнитов в слое LSTM
+DL_EARLY_STOPPING_PATIENCE = 500    # Количество эпох без улучшения до остановки обучения
+DL_LEARNING_RATE = 0.001            # Шаг оптимизатора
 
 # ТРАНСФОРМАЦИЯ ПРИЗНАКОВ: ЦЕНТРИРОВАНИЕ ПО ЗДОРОВОМУ СОСТОЯНИЮ
 BASELINE_WINDOWS_COUNT = 100 # Количество первых окон для расчета среднего "здорового" значения (Baseline)
@@ -90,13 +102,13 @@ TARGET_FAILURE_BEARING_INDEX = 0 # Индекс подшипника в спис
 
 # RUL/T-MIN ПОРОГ (Используется для удаления "слишком здоровых" данных)
 # Если RUL > RUL_MIN_THRESHOLD_HOURS, то строка удаляется из обучающей выборки.
-RUL_MIN_THRESHOLD_HOURS = 50 # Часы. Например, 400 часов. 0 = отключено
+RUL_MIN_THRESHOLD_HOURS = 100 # Часы. Например, 400 часов. 0 = отключено
 
 # КОНФИГУРАЦИЯ НАБОРОВ ПРИЗНАКОВ (FEATURE SET ABALATION)
 # Включать/выключать наборы: d0 - амплитуды, d1 - скорости, d2 - ускорения
 USE_D0_FEATURES = True # True / False Использовать центрированные амплитуды (d0)
-USE_D1_FEATURES = False # True / False Использовать скорости (d1, 1-я производная)
-USE_D2_FEATURES = False # True / False Использовать ускорения (d2, 2-я производная)
+USE_D1_FEATURES = True # True / False Использовать скорости (d1, 1-я производная)
+USE_D2_FEATURES = True # True / False Использовать ускорения (d2, 2-я производная)
 
 # ЛОГГЕР
 LOG_DIR = ROOT_DIR / 'logs'
@@ -144,7 +156,7 @@ CATB_TUNING_PARAMS = {
 }
 
 # Параметры для Optuna
-OPTUNA_N_TRIALS = 100 # Количество пробных запусков (итераций) Optuna
+OPTUNA_N_TRIALS = 500 # Количество пробных запусков (итераций) Optuna
 OPTUNA_TIMEOUT = 3600 # Максимальное время работы Optuna в секундах (1 час)
 
 # URI для постоянного хранения результатов Optuna (используем тот же SSD)

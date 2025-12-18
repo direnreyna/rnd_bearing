@@ -15,3 +15,4 @@ mlflow
 optuna
 optuna-integration
 catboost
+tensorflow
